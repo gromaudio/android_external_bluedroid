@@ -54,6 +54,10 @@
 
 
 //------------------Added from Bluedroid buildcfg.h---------------------
+#ifndef I2SPCM_SLAVE_BRCM
+#define I2SPCM_SLAVE_BRCM FALSE
+#endif
+
 #ifndef UNV_INCLUDED
 #define UNV_INCLUDED FALSE
 #endif
@@ -260,7 +264,7 @@
 #endif
 
 #ifndef BTA_GATT_INCLUDED
-#define BTA_GATT_INCLUDED TRUE
+#define BTA_GATT_INCLUDED FALSE
 #endif
 
 #ifndef BTA_DISABLE_DELAY
@@ -550,15 +554,14 @@
 #define L2CAP_FCR_RX_POOL_ID        HCI_ACL_POOL_ID
 #endif
 
-/* Number of ACL buffers to assign to LE
-   if the HCI buffer pool is shared with BR/EDR */
-#ifndef L2C_DEF_NUM_BLE_BUF_SHARED
-#define L2C_DEF_NUM_BLE_BUF_SHARED      1
-#endif
-
 /* Used by BTM when it sends HCI commands to the controller. */
 #ifndef BTM_CMD_POOL_ID
 #define BTM_CMD_POOL_ID             GKI_POOL_ID_2
+#endif
+
+/* Sends TCS messages. */
+#ifndef TCS_MSG_POOL_ID
+#define TCS_MSG_POOL_ID             GKI_POOL_ID_2
 #endif
 
 #ifndef OBX_CMD_POOL_SIZE
@@ -578,6 +581,11 @@
 #define CTP_SDP_DB_POOL_ID          GKI_POOL_ID_3
 #endif
 
+/* Used for CTP data exchange feature. */
+#ifndef CTP_DATA_EXCHG_POOL_ID
+#define CTP_DATA_EXCHG_POOL_ID      GKI_POOL_ID_2
+#endif
+
 /* Used to send data to L2CAP. */
 #ifndef GAP_DATA_POOL_ID
 #define GAP_DATA_POOL_ID            GKI_POOL_ID_3
@@ -591,6 +599,24 @@
 #ifndef SPP_DB_SIZE
 #define SPP_DB_SIZE                 GKI_BUF3_SIZE
 #endif
+
+/* HCRP protocol and internal commands. */
+#ifndef HCRP_CMD_POOL_ID
+#define HCRP_CMD_POOL_ID            GKI_POOL_ID_2
+#endif
+
+#ifndef HCRP_CMD_POOL_SIZE
+#define HCRP_CMD_POOL_SIZE          GKI_BUF2_SIZE
+#endif
+
+#ifndef BIP_EVT_POOL_SIZE
+#define BIP_EVT_POOL_SIZE           GKI_BUF3_SIZE
+#endif
+
+#ifndef BIP_DB_SIZE
+#define BIP_DB_SIZE                 GKI_BUF3_SIZE
+#endif
+
 
 /* BNEP data and protocol messages. */
 #ifndef BNEP_POOL_ID
@@ -1223,7 +1249,7 @@ and USER_HW_DISABLE_API macros */
 
 /* The maximum number of simultaneous channels that L2CAP can support. */
 #ifndef MAX_L2CAP_CHANNELS
-#define MAX_L2CAP_CHANNELS          16
+#define MAX_L2CAP_CHANNELS          10
 #endif
 
 /* The maximum number of simultaneous applications that can register with L2CAP. */
@@ -1396,7 +1422,7 @@ and USER_HW_DISABLE_API macros */
 ******************************************************************************/
 
 #ifndef BLE_INCLUDED
-#define BLE_INCLUDED            TRUE
+#define BLE_INCLUDED            FALSE
 #endif
 
 #ifndef LOCAL_BLE_CONTROLLER_ID
@@ -1409,19 +1435,19 @@ and USER_HW_DISABLE_API macros */
 **
 ******************************************************************************/
 #ifndef ATT_INCLUDED
-#define ATT_INCLUDED         TRUE
+#define ATT_INCLUDED         FALSE
 #endif
 
 #ifndef ATT_DEBUG
-#define ATT_DEBUG           TRUE
+#define ATT_DEBUG           FALSE
 #endif
 
 #ifndef GATT_SERVER_ENABLED
-#define GATT_SERVER_ENABLED          TRUE
+#define GATT_SERVER_ENABLED          FALSE
 #endif
 
 #ifndef GATT_CLIENT_ENABLED
-#define GATT_CLIENT_ENABLED          TRUE
+#define GATT_CLIENT_ENABLED          FALSE
 #endif
 
 #ifndef GATT_MAX_SR_PROFILES
@@ -1457,11 +1483,11 @@ and USER_HW_DISABLE_API macros */
 **
 ******************************************************************************/
 #ifndef SMP_INCLUDED
-#define SMP_INCLUDED         TRUE
+#define SMP_INCLUDED         FALSE
 #endif
 
 #ifndef SMP_DEBUG
-#define SMP_DEBUG            TRUE
+#define SMP_DEBUG            FALSE
 #endif
 
 #ifndef SMP_DEFAULT_AUTH_REQ
@@ -2167,7 +2193,7 @@ Range: Minimum 12000 (12 secs) on BR/EDR when supporting PBF.
 ******************************************************************************/
 
 #ifndef GAP_INCLUDED
-#define GAP_INCLUDED                TRUE
+#define GAP_INCLUDED                FALSE
 #endif
 
 /* This is set to enable use of GAP L2CAP connections. */
@@ -3479,10 +3505,6 @@ Range: Minimum 12000 (12 secs) when supporting PBF.
 #define AVRC_INCLUDED               TRUE
 #endif
 
-#ifndef AVRC_METADATA_INCLUDED
-#define AVRC_METADATA_INCLUDED      TRUE
-#endif
-
 /******************************************************************************
 **
 ** MCAP
@@ -3504,7 +3526,7 @@ Range: Minimum 12000 (12 secs) when supporting PBF.
 
 /* The maximum number of registered MCAP instances. */
 #ifndef MCA_NUM_REGS
-#define MCA_NUM_REGS    12
+#define MCA_NUM_REGS    3
 #endif
 
 /* The maximum number of control channels (to difference devices) per registered MCAP instances. */
@@ -3514,7 +3536,7 @@ Range: Minimum 12000 (12 secs) when supporting PBF.
 
 /* The maximum number of MDEP (including HDP echo) per registered MCAP instances. */
 #ifndef MCA_NUM_DEPS
-#define MCA_NUM_DEPS    13
+#define MCA_NUM_DEPS    3
 #endif
 
 /* The maximum number of MDL link per control channel. */
@@ -3729,6 +3751,9 @@ The maximum number of payload octets that the local device can receive in a sing
 
 #define L2CAP_FEATURE_REQ_ID      73
 #define L2CAP_FEATURE_RSP_ID     173
+
+
+#define L2CAP_ENHANCED_FEATURES   0
 
 
 /******************************************************************************

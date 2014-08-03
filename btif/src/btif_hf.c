@@ -1137,7 +1137,7 @@ static void  cleanup( void )
 }
 
 static const bthf_interface_t bthfInterface = {
-    sizeof(bthfInterface),
+    sizeof(bt_interface_t),
     init,
     connect,
     disconnect,

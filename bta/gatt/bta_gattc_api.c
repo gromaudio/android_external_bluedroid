@@ -32,14 +32,6 @@
 #include "bta_gatt_api.h"
 #include "bta_gattc_int.h"
 
-
-/*****************************************************************************
-**  Externs
-*****************************************************************************/
-#if BTA_DYNAMIC_MEMORY == FALSE
-extern tBTA_GATTC_CB  bta_gattc_cb;
-#endif
-
 /*****************************************************************************
 **  Constants
 *****************************************************************************/
@@ -49,22 +41,6 @@ static const tBTA_SYS_REG bta_gatt_reg =
     bta_gattc_hdl_event,
     NULL        /* need a disable functino to be called when BT is disabled */
 };
-
-/*******************************************************************************
-**
-** Function         BTA_GATTC_Init
-**
-** Description     This function is called to initalize GATTC module
-**
-** Parameters       None
-**
-** Returns          None
-**
-*******************************************************************************/
-void BTA_GATTC_Init()
-{
-    memset(&bta_gattc_cb, 0, sizeof(tBTA_GATTC_CB));
-}
 
 /*******************************************************************************
 **
@@ -256,7 +232,7 @@ void BTA_GATTC_ServiceSearchRequest (UINT16 conn_id, tBT_UUID *p_srvc_uuid)
 **
 ** Function         BTA_GATTC_GetFirstChar
 **
-** Description      This function is called to find the first characteristic of the
+** Description      This function is called to find the first charatceristic of the
 **                  service on the given server.
 **
 ** Parameters       conn_id: connection ID which identify the server.
@@ -294,7 +270,7 @@ tBTA_GATT_STATUS  BTA_GATTC_GetFirstChar (UINT16 conn_id, tBTA_GATT_SRVC_ID *p_s
 **
 ** Function         BTA_GATTC_GetNextChar
 **
-** Description      This function is called to find the next characteristic of the
+** Description      This function is called to find the next charatceristic of the
 **                  service on the given server.
 **
 ** Parameters       conn_id: connection ID which identify the server.
@@ -338,8 +314,8 @@ tBTA_GATT_STATUS  BTA_GATTC_GetNextChar (UINT16 conn_id,
 **
 ** Function         BTA_GATTC_GetFirstCharDescr
 **
-** Description      This function is called to find the first characteristic descriptor of the
-**                  characteristic on the given server.
+** Description      This function is called to find the first charatceristic descriptor of the
+**                  charatceristic on the given server.
 **
 ** Parameters       conn_id: connection ID which identify the server.
 **                  p_char_id: the characteristic ID of which the descriptor is belonged to.
@@ -382,8 +358,8 @@ tBTA_GATT_STATUS  BTA_GATTC_GetFirstCharDescr (UINT16 conn_id, tBTA_GATTC_CHAR_I
 **
 ** Function         BTA_GATTC_GetNextCharDescr
 **
-** Description      This function is called to find the next characteristic descriptor
-**                  of the characterisctic.
+** Description      This function is called to find the next charatceristic of the
+**                  service on the given server.
 **
 ** Parameters       conn_id: connection ID which identify the server.
 **                  p_start_descr_id: start the characteristic search from the next record
@@ -691,10 +667,7 @@ void BTA_GATTC_WriteCharDescr (UINT16 conn_id,
                                tBTA_GATT_AUTH_REQ auth_req)
 {
     tBTA_GATTC_API_WRITE  *p_buf;
-    UINT16  len = sizeof(tBTA_GATTC_API_WRITE);
-
-    if (p_data != NULL)
-        len += p_data->len;
+    UINT16  len = sizeof(tBTA_GATTC_API_WRITE) + p_data->len;
 
     if ((p_buf = (tBTA_GATTC_API_WRITE *) GKI_getbuf(len)) != NULL)
     {
@@ -816,7 +789,7 @@ void BTA_GATTC_SendIndConfirm (UINT16 conn_id, tBTA_GATTC_CHAR_ID *p_char_id)
     tBTA_GATTC_API_CONFIRM  *p_buf;
 
     APPL_TRACE_API3("BTA_GATTC_SendIndConfirm conn_id=%d service uuid1=0x%x char uuid=0x%x",
-                    conn_id, p_char_id->srvc_id.id.uuid.uu.uuid16, p_char_id->char_id.uuid.uu.uuid16);
+                    conn_id, p_char_id->srvc_id.id.uuid.uu.uuid16, p_char_id->char_id.uuid.uu.uuid16); //toto
 
     if ((p_buf = (tBTA_GATTC_API_CONFIRM *) GKI_getbuf(sizeof(tBTA_GATTC_API_CONFIRM))) != NULL)
     {
@@ -868,39 +841,22 @@ tBTA_GATT_STATUS BTA_GATTC_RegisterForNotifications (tBTA_GATTC_IF client_if,
     {
         for (i = 0; i < BTA_GATTC_NOTIF_REG_MAX; i ++)
         {
-            if ( p_clreg->notif_reg[i].in_use &&
-                 !memcmp(p_clreg->notif_reg[i].remote_bda, bda, BD_ADDR_LEN) &&
-                  bta_gattc_charid_compare(&p_clreg->notif_reg[i].char_id, p_char_id))
+            if (!p_clreg->notif_reg[i].in_use)
             {
-                APPL_TRACE_WARNING0("notification already registered");
+                memset(&p_clreg->notif_reg, 0, sizeof(tBTA_GATTC_NOTIF_REG));
+
+                p_clreg->notif_reg[i].in_use = TRUE;
+                memcpy(p_clreg->notif_reg[i].remote_bda, bda, BD_ADDR_LEN);
+                memcpy(&p_clreg->notif_reg[i].char_id, p_char_id, sizeof(tBTA_GATTC_CHAR_ID));
+
                 status = BTA_GATT_OK;
                 break;
             }
         }
-        if (status != BTA_GATT_OK)
+        if (i == BTA_GATTC_NOTIF_REG_MAX)
         {
-            for (i = 0; i < BTA_GATTC_NOTIF_REG_MAX; i ++)
-            {
-                if (!p_clreg->notif_reg[i].in_use)
-                {
-                    memset((void *)&p_clreg->notif_reg[i], 0, sizeof(tBTA_GATTC_NOTIF_REG));
-
-                    p_clreg->notif_reg[i].in_use = TRUE;
-                    memcpy(p_clreg->notif_reg[i].remote_bda, bda, BD_ADDR_LEN);
-
-                    p_clreg->notif_reg[i].char_id.srvc_id.is_primary = p_char_id->srvc_id.is_primary;
-                    bta_gattc_cpygattid(&p_clreg->notif_reg[i].char_id.srvc_id.id, &p_char_id->srvc_id.id);
-                    bta_gattc_cpygattid(&p_clreg->notif_reg[i].char_id.char_id, &p_char_id->char_id);
-
-                    status = BTA_GATT_OK;
-                    break;
-                }
-            }
-            if (i == BTA_GATTC_NOTIF_REG_MAX)
-            {
-                status = BTA_GATT_NO_RESOURCES;
-                APPL_TRACE_ERROR0("Max Notification Reached, registration failed.");
-            }
+            status = BTA_GATT_NO_RESOURCES;
+            APPL_TRACE_ERROR0("Max Notification Reached, registration failed.");
         }
     }
     else
@@ -949,9 +905,10 @@ tBTA_GATT_STATUS BTA_GATTC_DeregisterForNotifications (tBTA_GATTC_IF client_if,
         {
             if (p_clreg->notif_reg[i].in_use &&
                 !memcmp(p_clreg->notif_reg[i].remote_bda, bda, BD_ADDR_LEN) &&
-                bta_gattc_charid_compare(&p_clreg->notif_reg[i].char_id, p_char_id))
+                !memcmp(&p_clreg->notif_reg[i].char_id, p_char_id, sizeof(tBTA_GATTC_CHAR_ID)))
             {
                 APPL_TRACE_DEBUG0("Deregistered.");
+
                 memset(&p_clreg->notif_reg[i], 0, sizeof(tBTA_GATTC_NOTIF_REG));
                 status = BTA_GATT_OK;
                 break;
@@ -974,31 +931,4 @@ tBTA_GATT_STATUS BTA_GATTC_DeregisterForNotifications (tBTA_GATTC_IF client_if,
     return status;
 }
 
-/*******************************************************************************
-**
-** Function         BTA_GATTC_Refresh
-**
-** Description      Refresh the server cache of the remote device
-**
-** Parameters       remote_bda: remote device BD address.
-**
-** Returns          void
-**
-*******************************************************************************/
-void BTA_GATTC_Refresh(BD_ADDR remote_bda)
-{
-    tBTA_GATTC_API_OPEN  *p_buf;
-
-    if ((p_buf = (tBTA_GATTC_API_OPEN *) GKI_getbuf(sizeof(tBTA_GATTC_API_OPEN))) != NULL)
-    {
-        p_buf->hdr.event = BTA_GATTC_API_REFRESH_EVT;
-
-        memcpy(p_buf->remote_bda, remote_bda, BD_ADDR_LEN);
-
-
-        bta_sys_sendmsg(p_buf);
-    }
-    return;
-}
 #endif /* BTA_GATT_INCLUDED */
-

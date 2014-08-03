@@ -26,9 +26,6 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <assert.h>
-#include <signal.h>
-#include <time.h>
-#include <hardware/bluetooth.h>
 
 #include "gki.h"
 #include "bd.h"
@@ -51,26 +48,9 @@
 #define HCI_LOGGING_FILENAME  "/data/misc/bluedroid/btsnoop_hci.log"
 #endif
 
-/* Stack preload process timeout period  */
-#ifndef PRELOAD_START_TIMEOUT_MS
-#define PRELOAD_START_TIMEOUT_MS 3000  // 3 seconds
-#endif
-
-/* Stack preload process maximum retry attempts  */
-#ifndef PRELOAD_MAX_RETRY_ATTEMPTS
-#define PRELOAD_MAX_RETRY_ATTEMPTS 0
-#endif
-
 /*******************************************************************************
 **  Local type definitions
 *******************************************************************************/
-/* Preload retry control block */
-typedef struct
-{
-    int     retry_counts;
-    BOOLEAN timer_created;
-    timer_t timer_id;
-} bt_preload_retry_cb_t;
 
 /******************************************************************************
 **  Variables
@@ -85,16 +65,11 @@ char hci_logfile[256] = HCI_LOGGING_FILENAME;
 static bt_hc_interface_t *bt_hc_if=NULL;
 static const bt_hc_callbacks_t hc_callbacks;
 static BOOLEAN lpm_enabled = FALSE;
-static bt_preload_retry_cb_t preload_retry_cb;
 
 /*******************************************************************************
 **  Static functions
 *******************************************************************************/
 static void bte_main_in_hw_init(void);
-static void bte_hci_enable(void);
-static void bte_hci_disable(void);
-static void preload_start_wait_timer(void);
-static void preload_stop_wait_timer(void);
 
 /*******************************************************************************
 **  Externs
@@ -105,7 +80,6 @@ BT_API extern void BTE_LoadStack(void);
 BT_API void BTE_UnloadStack(void);
 extern void scru_flip_bda (BD_ADDR dst, const BD_ADDR src);
 extern void bte_load_conf(const char *p_path);
-extern bt_bdaddr_t btif_local_bd_addr;
 
 
 /*******************************************************************************
@@ -128,15 +102,13 @@ UINT32 bte_btu_stack[(BTE_BTU_STACK_SIZE + 3) / 4];
 ** Returns          None
 **
 ******************************************************************************/
-static void bte_main_in_hw_init(void)
+void bte_main_in_hw_init(void)
 {
     if ( (bt_hc_if = (bt_hc_interface_t *) bt_hc_get_interface()) \
          == NULL)
     {
         APPL_TRACE_ERROR0("!!! Failed to get BtHostControllerInterface !!!");
     }
-
-    memset(&preload_retry_cb, 0, sizeof(bt_preload_retry_cb_t));
 }
 
 /******************************************************************************
@@ -187,7 +159,7 @@ void bte_main_shutdown()
 ** Returns          None
 **
 ******************************************************************************/
-void bte_main_enable()
+void bte_main_enable(uint8_t *local_addr)
 {
     APPL_TRACE_DEBUG1("%s", __FUNCTION__);
 
@@ -196,53 +168,9 @@ void bte_main_enable()
 
     lpm_enabled = FALSE;
 
-    bte_hci_enable();
-
-    GKI_create_task((TASKPTR)btu_task, BTU_TASK, BTE_BTU_TASK_STR,
-                    (UINT16 *) ((UINT8 *)bte_btu_stack + BTE_BTU_STACK_SIZE),
-                    sizeof(bte_btu_stack));
-
-    GKI_run(0);
-}
-
-/******************************************************************************
-**
-** Function         bte_main_disable
-**
-** Description      BTE MAIN API - Destroys all the BTE tasks. Should be called
-**                  part of the Bluetooth stack disable sequence
-**
-** Returns          None
-**
-******************************************************************************/
-void bte_main_disable(void)
-{
-    APPL_TRACE_DEBUG1("%s", __FUNCTION__);
-
-    preload_stop_wait_timer();
-    bte_hci_disable();
-    GKI_destroy_task(BTU_TASK);
-    GKI_freeze();
-}
-
-/******************************************************************************
-**
-** Function         bte_hci_enable
-**
-** Description      Enable HCI & Vendor modules
-**
-** Returns          None
-**
-******************************************************************************/
-static void bte_hci_enable(void)
-{
-    APPL_TRACE_DEBUG1("%s", __FUNCTION__);
-
-    preload_start_wait_timer();
-
     if (bt_hc_if)
     {
-        int result = bt_hc_if->init(&hc_callbacks, btif_local_bd_addr.address);
+        int result = bt_hc_if->init(&hc_callbacks, local_addr);
         APPL_TRACE_EVENT1("libbt-hci init returns %d", result);
 
         assert(result == BT_HC_STATUS_SUCCESS);
@@ -272,18 +200,25 @@ static void bte_hci_enable(void)
 
         bt_hc_if->preload(NULL);
     }
+
+    GKI_create_task((TASKPTR)btu_task, BTU_TASK, BTE_BTU_TASK_STR,
+                    (UINT16 *) ((UINT8 *)bte_btu_stack + BTE_BTU_STACK_SIZE),
+                    sizeof(bte_btu_stack));
+
+    GKI_run(0);
 }
 
 /******************************************************************************
 **
-** Function         bte_hci_disable
+** Function         bte_main_disable
 **
-** Description      Disable HCI & Vendor modules
+** Description      BTE MAIN API - Destroys all the BTE tasks. Should be called
+**                  part of the Bluetooth stack disable sequence
 **
 ** Returns          None
 **
 ******************************************************************************/
-static void bte_hci_disable(void)
+void bte_main_disable(void)
 {
     APPL_TRACE_DEBUG1("%s", __FUNCTION__);
 
@@ -291,97 +226,11 @@ static void bte_hci_disable(void)
     {
         bt_hc_if->cleanup();
         bt_hc_if->set_power(BT_HC_CHIP_PWR_OFF);
-        if (hci_logging_enabled == TRUE)
-            bt_hc_if->logging(BT_HC_LOGGING_OFF, hci_logfile);
-    }
-}
-
-/*******************************************************************************
-**
-** Function        preload_wait_timeout
-**
-** Description     Timeout thread of preload watchdog timer
-**
-** Returns         None
-**
-*******************************************************************************/
-static void preload_wait_timeout(union sigval arg)
-{
-    APPL_TRACE_ERROR2("...preload_wait_timeout (retried:%d/max-retry:%d)...",
-                        preload_retry_cb.retry_counts,
-                        PRELOAD_MAX_RETRY_ATTEMPTS);
-
-    if (preload_retry_cb.retry_counts++ < PRELOAD_MAX_RETRY_ATTEMPTS)
-    {
-        bte_hci_disable();
-        GKI_delay(100);
-        bte_hci_enable();
-    }
-    else
-    {
-        /* Notify BTIF_TASK that the init procedure had failed*/
-        GKI_send_event(BTIF_TASK, BT_EVT_HARDWARE_INIT_FAIL);
-    }
-}
-
-/*******************************************************************************
-**
-** Function        preload_start_wait_timer
-**
-** Description     Launch startup watchdog timer
-**
-** Returns         None
-**
-*******************************************************************************/
-static void preload_start_wait_timer(void)
-{
-    int status;
-    struct itimerspec ts;
-    struct sigevent se;
-    UINT32 timeout_ms = PRELOAD_START_TIMEOUT_MS;
-
-    if (preload_retry_cb.timer_created == FALSE)
-    {
-        se.sigev_notify = SIGEV_THREAD;
-        se.sigev_value.sival_ptr = &preload_retry_cb.timer_id;
-        se.sigev_notify_function = preload_wait_timeout;
-        se.sigev_notify_attributes = NULL;
-
-        status = timer_create(CLOCK_MONOTONIC, &se, &preload_retry_cb.timer_id);
-
-        if (status == 0)
-            preload_retry_cb.timer_created = TRUE;
     }
 
-    if (preload_retry_cb.timer_created == TRUE)
-    {
-        ts.it_value.tv_sec = timeout_ms/1000;
-        ts.it_value.tv_nsec = 1000000*(timeout_ms%1000);
-        ts.it_interval.tv_sec = 0;
-        ts.it_interval.tv_nsec = 0;
+    GKI_destroy_task(BTU_TASK);
 
-        status = timer_settime(preload_retry_cb.timer_id, 0, &ts, 0);
-        if (status == -1)
-            APPL_TRACE_ERROR0("Failed to fire preload watchdog timer");
-    }
-}
-
-/*******************************************************************************
-**
-** Function        preload_stop_wait_timer
-**
-** Description     Stop preload watchdog timer
-**
-** Returns         None
-**
-*******************************************************************************/
-static void preload_stop_wait_timer(void)
-{
-    if (preload_retry_cb.timer_created == TRUE)
-    {
-        timer_delete(preload_retry_cb.timer_id);
-        preload_retry_cb.timer_created = FALSE;
-    }
+    GKI_freeze();
 }
 
 /******************************************************************************
@@ -531,14 +380,9 @@ static void preload_cb(TRANSAC transac, bt_hc_preload_result_t result)
 {
     APPL_TRACE_EVENT1("HC preload_cb %d [0:SUCCESS 1:FAIL]", result);
 
-
-    if (result == BT_HC_PRELOAD_SUCCESS)
-    {
-        preload_stop_wait_timer();
-
-        /* notify BTU task that libbt-hci is ready */
-        GKI_send_event(BTU_TASK, BT_EVT_PRELOAD_CMPL);
-    }
+    /* notify BTU task that libbt-hci is ready */
+    /* even if PRELOAD process failed */
+    GKI_send_event(BTU_TASK, TASK_MBOX_0_EVT_MASK);
 }
 
 /******************************************************************************

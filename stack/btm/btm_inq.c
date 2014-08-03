@@ -185,14 +185,11 @@ tBTM_STATUS BTM_SetDiscoverability (UINT16 inq_mode, UINT16 window, UINT16 inter
 
     BTM_TRACE_API0 ("BTM_SetDiscoverability");
 #if (BLE_INCLUDED == TRUE && BLE_INCLUDED == TRUE)
-    if (HCI_LE_HOST_SUPPORTED(btm_cb.devcb.local_lmp_features[HCI_EXT_FEATURES_PAGE_1]))
+    if (btm_ble_set_discoverability((UINT16)(inq_mode))
+                        == BTM_SUCCESS)
     {
-        if (btm_ble_set_discoverability((UINT16)(inq_mode))
-                            == BTM_SUCCESS)
-        {
-            btm_cb.btm_inq_vars.discoverable_mode &= (~BTM_BLE_DISCOVERABLE_MASK);
-            btm_cb.btm_inq_vars.discoverable_mode |= (inq_mode & BTM_BLE_CONNECTABLE_MASK);
-        }
+        btm_cb.btm_inq_vars.discoverable_mode &= (~BTM_BLE_DISCOVERABLE_MASK);
+        btm_cb.btm_inq_vars.discoverable_mode |= (inq_mode & BTM_BLE_CONNECTABLE_MASK);
     }
     inq_mode &= ~BTM_BLE_DISCOVERABLE_MASK;
 #endif
@@ -316,7 +313,7 @@ tBTM_STATUS BTM_SetInquiryScanType (UINT16 scan_type)
         return (BTM_ILLEGAL_VALUE);
 
     /* whatever app wants if device is not 1.2 scan type should be STANDARD */
-    if (!HCI_LMP_INTERLACED_INQ_SCAN_SUPPORTED(btm_cb.devcb.local_lmp_features[HCI_EXT_FEATURES_PAGE_0]))
+    if (!HCI_LMP_INTERLACED_INQ_SCAN_SUPPORTED(btm_cb.devcb.local_features))
      return (BTM_MODE_UNSUPPORTED);
 
     /* Check for scan type if configuration has been changed */
@@ -353,7 +350,7 @@ tBTM_STATUS BTM_SetPageScanType (UINT16 scan_type)
         return (BTM_ILLEGAL_VALUE);
 
     /* whatever app wants if device is not 1.2 scan type should be STANDARD */
-    if (!HCI_LMP_INTERLACED_PAGE_SCAN_SUPPORTED(btm_cb.devcb.local_lmp_features[HCI_EXT_FEATURES_PAGE_0]))
+    if (!HCI_LMP_INTERLACED_PAGE_SCAN_SUPPORTED(btm_cb.devcb.local_features))
      return (BTM_MODE_UNSUPPORTED);
 
     /* Check for scan type if configuration has been changed */
@@ -396,13 +393,13 @@ tBTM_STATUS BTM_SetInquiryMode (UINT8 mode)
     }
     else if (mode == BTM_INQ_RESULT_WITH_RSSI)
     {
-    if (!HCI_LMP_INQ_RSSI_SUPPORTED(btm_cb.devcb.local_lmp_features[HCI_EXT_FEATURES_PAGE_0]))
+    if (!HCI_LMP_INQ_RSSI_SUPPORTED(btm_cb.devcb.local_features))
         return (BTM_MODE_UNSUPPORTED);
     }
 #if (( BTM_EIR_CLIENT_INCLUDED == TRUE )||( BTM_EIR_SERVER_INCLUDED == TRUE ))
     else if (mode == BTM_INQ_RESULT_EXTENDED)
     {
-        if (!HCI_EXT_INQ_RSP_SUPPORTED(btm_cb.devcb.local_lmp_features[HCI_EXT_FEATURES_PAGE_0]))
+        if (!HCI_EXT_INQ_RSP_SUPPORTED(btm_cb.devcb.local_features))
             return (BTM_MODE_UNSUPPORTED);
     }
 #endif
@@ -505,9 +502,8 @@ tBTM_STATUS BTM_SetPeriodicInquiryMode (tBTM_INQ_PARMS *p_inqparms, UINT16 max_d
         min_delay < BTM_PER_INQ_MIN_MIN_PERIOD         ||
         min_delay > BTM_PER_INQ_MAX_MIN_PERIOD         ||
         max_delay <= min_delay                         ||
-        max_delay < BTM_PER_INQ_MIN_MAX_PERIOD)
- /*       max_delay > BTM_PER_INQ_MAX_MAX_PERIOD)*/
- /*  BTM_PER_INQ_MAX_MAX_PERIOD set to 1's in all bits. Condition resulting in false always*/
+        max_delay < BTM_PER_INQ_MIN_MAX_PERIOD         ||
+        max_delay > BTM_PER_INQ_MAX_MAX_PERIOD)
     {
         return (BTM_ILLEGAL_VALUE);
     }
@@ -622,16 +618,13 @@ tBTM_STATUS BTM_SetConnectability (UINT16 page_mode, UINT16 window, UINT16 inter
     BTM_TRACE_API0 ("BTM_SetConnectability");
 
 #if (BLE_INCLUDED == TRUE && BLE_INCLUDED == TRUE)
-    if (HCI_LE_HOST_SUPPORTED(btm_cb.devcb.local_lmp_features[HCI_EXT_FEATURES_PAGE_1]))
+    if (btm_ble_set_connectability(page_mode) == BTM_SUCCESS)
     {
-        if (btm_ble_set_connectability(page_mode) != BTM_SUCCESS)
-        {
-            return BTM_NO_RESOURCES;
-        }
         p_inq->connectable_mode &= (~BTM_BLE_CONNECTABLE_MASK);
         p_inq->connectable_mode |= (page_mode & BTM_BLE_CONNECTABLE_MASK);
     }
     page_mode &= ~BTM_BLE_CONNECTABLE_MASK;
+
 #endif
 
     /*** Check mode parameter ***/
@@ -764,7 +757,7 @@ tBTM_STATUS BTM_CancelInquiry(void)
         return (BTM_WRONG_MODE);
 
     /* Only cancel if not in periodic mode, otherwise the caller should call BTM_CancelPeriodicMode */
-    if ((p_inq->inq_active &BTM_INQUIRY_ACTIVE_MASK) != 0 &&
+    if (p_inq->inq_active &&
         (!(p_inq->inq_active & BTM_PERIODIC_INQUIRY_ACTIVE)))
     {
         p_inq->inq_active = BTM_INQUIRY_INACTIVE;
@@ -782,11 +775,8 @@ tBTM_STATUS BTM_CancelInquiry(void)
          /* Initiate the cancel inquiry */
         else
         {
-            if ((p_inq->inqparms.mode & BTM_BR_INQUIRY_MASK) != 0)
-            {
-                if (!btsnd_hcic_inq_cancel())
-                    status = BTM_NO_RESOURCES;
-            }
+            if (!btsnd_hcic_inq_cancel())
+                status = BTM_NO_RESOURCES;
 #if BLE_INCLUDED == TRUE
             if ((p_inq->inqparms.mode & BTM_BLE_INQUIRY_MASK) != 0)
                 btm_ble_stop_scan();
@@ -815,7 +805,7 @@ tBTM_STATUS BTM_CancelInquiry(void)
 ** Description      This function is called to start an inquiry.
 **
 ** Parameters:      p_inqparms - pointer to the inquiry information
-**                      mode - GENERAL or LIMITED inquiry, BR/LE bit mask seperately
+**                      mode - GENERAL or LIMITED inquiry
 **                      duration - length in 1.28 sec intervals (If '0', the inquiry is CANCELLED)
 **                      max_resps - maximum amount of devices to search for before ending the inquiry
 **                      filter_cond_type - BTM_CLR_INQUIRY_FILTER, BTM_FILTER_COND_DEVICE_CLASS, or
@@ -840,7 +830,7 @@ tBTM_STATUS BTM_CancelInquiry(void)
 tBTM_STATUS BTM_StartInquiry (tBTM_INQ_PARMS *p_inqparms, tBTM_INQ_RESULTS_CB *p_results_cb,
                               tBTM_CMPL_CB *p_cmpl_cb)
 {
-    tBTM_STATUS  status = BTM_CMD_STARTED;
+    tBTM_STATUS  status;
     tBTM_INQUIRY_VAR_ST *p_inq = &btm_cb.btm_inq_vars;
 
     BTM_TRACE_API4 ("BTM_StartInquiry: mode: %d, dur: %d, rsps: %d, flt: %d",
@@ -857,23 +847,23 @@ tBTM_STATUS BTM_StartInquiry (tBTM_INQ_PARMS *p_inqparms, tBTM_INQ_RESULTS_CB *p
         return (BTM_WRONG_MODE);
 
     if ((p_inqparms->mode & BTM_BR_INQUIRY_MASK)!= BTM_GENERAL_INQUIRY &&
-        (p_inqparms->mode & BTM_BR_INQUIRY_MASK)!= BTM_LIMITED_INQUIRY
-#if (BLE_INCLUDED == TRUE)
-        && (p_inqparms->mode & BTM_BLE_INQUIRY_MASK)!= BTM_BLE_GENERAL_INQUIRY
-        && (p_inqparms->mode & BTM_BLE_INQUIRY_MASK)!= BTM_BLE_LIMITED_INQUIRY
-#endif
-        )
+        (p_inqparms->mode & BTM_BR_INQUIRY_MASK)!= BTM_LIMITED_INQUIRY)
         return (BTM_ILLEGAL_VALUE);
 
     /* Save the inquiry parameters to be used upon the completion of setting/clearing the inquiry filter */
     p_inq->inqparms = *p_inqparms;
+#if (BLE_INCLUDED == TRUE)
+    p_inq->inqparms.mode = (UINT8)(p_inq->inqparms.mode & BTM_BLE_INQUIRY_MASK) | (UINT8)(1 << (p_inqparms->mode & BTM_BR_INQUIRY_MASK));
+#else
+    p_inq->inqparms.mode = (UINT8)(1 << (p_inqparms->mode & BTM_BR_INQUIRY_MASK));
+#endif
 
     /* Initialize the inquiry variables */
     p_inq->state = BTM_INQ_ACTIVE_STATE;
     p_inq->p_inq_cmpl_cb = p_cmpl_cb;
     p_inq->p_inq_results_cb = p_results_cb;
     p_inq->inq_cmpl_info.num_resp = 0;         /* Clear the results counter */
-    p_inq->inq_active = p_inqparms->mode;
+    p_inq->inq_active = (UINT8)(1 << (p_inqparms->mode & BTM_BR_INQUIRY_MASK));
 
     BTM_TRACE_DEBUG1("BTM_StartInquiry: p_inq->inq_active = 0x%02x", p_inq->inq_active);
 
@@ -881,14 +871,9 @@ tBTM_STATUS BTM_StartInquiry (tBTM_INQ_PARMS *p_inqparms, tBTM_INQ_RESULTS_CB *p
 #if BLE_INCLUDED == TRUE
     if (p_inqparms->mode & BTM_BLE_INQUIRY_MASK)
     {
-        if (!HCI_LE_HOST_SUPPORTED(btm_cb.devcb.local_lmp_features[HCI_EXT_FEATURES_PAGE_1]))
-        {
-            p_inq->inqparms.mode &= ~ BTM_BLE_INQUIRY_MASK;
-            status = BTM_ILLEGAL_VALUE;
-        }
         /* BLE for now does not support filter condition for inquiry */
-        else if ((status = btm_ble_start_inquiry((UINT8)(p_inqparms->mode & BTM_BLE_INQUIRY_MASK),
-                                            p_inqparms->duration)) != BTM_CMD_STARTED)
+        if (btm_ble_start_inquiry((UINT8)(p_inqparms->mode & BTM_BLE_INQUIRY_MASK),
+                        p_inq->inqparms.duration) != BTM_SUCCESS)
         {
             BTM_TRACE_ERROR0("Err Starting LE Inquiry.");
             p_inq->inqparms.mode &= ~ BTM_BLE_INQUIRY_MASK;
@@ -899,10 +884,6 @@ tBTM_STATUS BTM_StartInquiry (tBTM_INQ_PARMS *p_inqparms, tBTM_INQ_RESULTS_CB *p
         BTM_TRACE_DEBUG1("BTM_StartInquiry: mode = %02x", p_inqparms->mode);
     }
 #endif /* end of BLE_INCLUDED */
-
-    /* we're done with this routine if BR/EDR inquiry is not desired. */
-    if ((p_inqparms->mode & BTM_BR_INQUIRY_MASK) == BTM_INQUIRY_NONE)
-        return status;
 
 #if (defined(BTM_BYPASS_EVENT_FILTERING) && BTM_BYPASS_EVENT_FILTERING == TRUE)
     BTM_TRACE_WARNING0("BTM: Bypassing event filtering...");
@@ -1973,7 +1954,7 @@ void btm_process_inq_results (UINT8 *p, UINT8 inq_res_mode)
     UINT8            num_resp, xx;
     BD_ADDR          bda;
     tINQ_DB_ENT     *p_i;
-    tBTM_INQ_RESULTS *p_cur=NULL;
+    tBTM_INQ_RESULTS *p_cur;
     BOOLEAN          is_new = TRUE;
     BOOLEAN          update = FALSE;
     INT8             i_rssi;
@@ -1996,8 +1977,8 @@ void btm_process_inq_results (UINT8 *p, UINT8 inq_res_mode)
     BTM_TRACE_DEBUG3 ("btm_process_inq_results inq_active:0x%x state:%d inqfilt_active:%d",
         btm_cb.btm_inq_vars.inq_active, btm_cb.btm_inq_vars.state, btm_cb.btm_inq_vars.inqfilt_active);
 #endif
-    /* Only process the results if the BR inquiry is still active */
-    if (!(p_inq->inq_active & BTM_BR_INQ_ACTIVE_MASK))
+    /* Only process the results if the inquiry is still active */
+    if (!p_inq->inq_active)
         return;
 
     STREAM_TO_UINT8 (num_resp, p);
@@ -2345,8 +2326,7 @@ void btm_process_inq_complete (UINT8 status, UINT8 mode)
 
             btm_clr_inq_result_flt();
 
-            if((p_inq->inq_cmpl_info.status == BTM_SUCCESS) &&
-                HCI_LMP_INQ_RSSI_SUPPORTED(btm_cb.devcb.local_lmp_features[HCI_EXT_FEATURES_PAGE_0]))
+            if((p_inq->inq_cmpl_info.status == BTM_SUCCESS) && HCI_LMP_INQ_RSSI_SUPPORTED(btm_cb.devcb.local_features))
             {
                 btm_sort_inq_result();
             }
@@ -2519,7 +2499,7 @@ tBTM_STATUS  btm_initiate_rem_name (BD_ADDR remote_bda, tBTM_INQ_INFO *p_cur,
 *******************************************************************************/
 void btm_process_remote_name (BD_ADDR bda, BD_NAME bdn, UINT16 evt_len, UINT8 hci_status)
 {
-    tBTM_REMOTE_DEV_NAME    rem_name;
+    tBTM_REMOTE_DEV_NAME    rem_name = {0};
     tBTM_INQUIRY_VAR_ST    *p_inq = &btm_cb.btm_inq_vars;
     tBTM_CMPL_CB           *p_cb = p_inq->p_remname_cmpl_cb;
     UINT8                  *p_n1;
@@ -2579,7 +2559,6 @@ void btm_process_remote_name (BD_ADDR bda, BD_NAME bdn, UINT16 evt_len, UINT8 hc
             /*      temporary buffer.                                       */
             p_n1 = (UINT8 *)rem_name.remote_bd_name;
             rem_name.length = (evt_len < BD_NAME_LEN) ? evt_len : BD_NAME_LEN;
-            rem_name.remote_bd_name[rem_name.length] = 0;
             rem_name.status = BTM_SUCCESS;
             temp_evt_len = rem_name.length;
 
@@ -2588,7 +2567,6 @@ void btm_process_remote_name (BD_ADDR bda, BD_NAME bdn, UINT16 evt_len, UINT8 hc
                 *p_n1++ = *bdn++;
                 temp_evt_len--;
             }
-            rem_name.remote_bd_name[rem_name.length] = 0;
         }
 
 
@@ -2776,7 +2754,7 @@ void btm_read_linq_tx_power_complete(UINT8 *p)
 tBTM_STATUS BTM_WriteEIR( BT_HDR *p_buff )
 {
 #if (BTM_EIR_SERVER_INCLUDED == TRUE)
-    if (HCI_EXT_INQ_RSP_SUPPORTED(btm_cb.devcb.local_lmp_features[HCI_EXT_FEATURES_PAGE_0]))
+    if (HCI_EXT_INQ_RSP_SUPPORTED(btm_cb.devcb.local_features))
     {
         BTM_TRACE_API0("Write Extended Inquiry Response to controller");
         btsnd_hcic_write_ext_inquiry_response (p_buff, BTM_EIR_DEFAULT_FEC_REQUIRED);

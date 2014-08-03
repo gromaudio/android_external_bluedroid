@@ -28,6 +28,7 @@
 #include "bta_sys.h"
 #include "bta_gatt_api.h"
 #include "gatt_api.h"
+//#include "bta_gatts_co.h"
 
 #include "gki.h"
 
@@ -51,8 +52,7 @@ enum
     BTA_GATTS_API_RSP_EVT,
     BTA_GATTS_API_OPEN_EVT,
     BTA_GATTS_API_CANCEL_OPEN_EVT,
-    BTA_GATTS_API_CLOSE_EVT,
-    BTA_GATTS_API_LISTEN_EVT
+    BTA_GATTS_API_CLOSE_EVT
 
 };
 typedef UINT16 tBTA_GATTS_INT_EVT;
@@ -116,6 +116,7 @@ typedef struct
 typedef struct
 {
     BT_HDR  hdr;
+    //todo BD_ADDR bd_addr;
     UINT16  attr_id;
     UINT16  len;
     BOOLEAN need_confirm;
@@ -147,14 +148,6 @@ typedef struct
 
 typedef tBTA_GATTS_API_OPEN tBTA_GATTS_API_CANCEL_OPEN;
 
-typedef struct
-{
-    BT_HDR                  hdr;
-    BD_ADDR_PTR             remote_bda;
-    tBTA_GATTS_IF           server_if;
-    BOOLEAN                 start;
-} tBTA_GATTS_API_LISTEN;
-
 typedef union
 {
     BT_HDR                          hdr;
@@ -171,8 +164,6 @@ typedef union
     tBTA_GATTS_API_CANCEL_OPEN      api_cancel_open;
 
     tBTA_GATTS_INT_START_IF         int_start_if;
-    /* if peripheral role is supported */
-    tBTA_GATTS_API_LISTEN           api_listen;
 } tBTA_GATTS_DATA;
 
 /* application registration control block */
@@ -181,7 +172,7 @@ typedef struct
     BOOLEAN             in_use;
     tBT_UUID            app_uuid;
     tBTA_GATTS_CBACK    *p_cback;
-    tBTA_GATTS_IF        gatt_if;
+    tBTA_GATTS_IF        gatt_if;  //todo cahneg to server_if
 }tBTA_GATTS_RCB;
 
 /* service registration control block */
@@ -242,7 +233,6 @@ extern void bta_gatts_indicate_handle (tBTA_GATTS_CB *p_cb, tBTA_GATTS_DATA * p_
 extern void bta_gatts_open (tBTA_GATTS_CB *p_cb, tBTA_GATTS_DATA * p_msg);
 extern void bta_gatts_cancel_open (tBTA_GATTS_CB *p_cb, tBTA_GATTS_DATA * p_msg);
 extern void bta_gatts_close (tBTA_GATTS_CB *p_cb, tBTA_GATTS_DATA * p_msg);
-extern void bta_gatts_listen(tBTA_GATTS_CB *p_cb, tBTA_GATTS_DATA * p_msg);
 
 extern BOOLEAN bta_gatts_uuid_compare(tBT_UUID tar, tBT_UUID src);
 extern tBTA_GATTS_RCB *bta_gatts_find_app_rcb_by_app_if(tBTA_GATTS_IF server_if);
