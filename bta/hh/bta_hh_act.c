@@ -84,20 +84,18 @@ void bta_hh_api_enable(tBTA_HH_DATA *p_data)
 
         status = BTA_HH_OK;
         /* initialize device CB */
-        for (xx = 0; xx < BTA_HH_MAX_DEVICE; xx ++)
+        for (xx = 0; xx < BTA_HH_MAX_KNOWN; xx ++)
         {
             bta_hh_cb.kdev[xx].state        = BTA_HH_IDLE_ST;
             bta_hh_cb.kdev[xx].hid_handle   = BTA_HH_INVALID_HANDLE;
             bta_hh_cb.kdev[xx].index        = xx;
+            /* initialize control block map */
+            bta_hh_cb.cb_index[xx]          = BTA_HH_MAX_KNOWN;
         }
-
-        /* initialize control block map */
-        for (xx = 0; xx < BTA_HH_MAX_KNOWN; xx ++)
-            bta_hh_cb.cb_index[xx]          = BTA_HH_IDX_INVALID;
     }
 
-        /* signal BTA call back event */
-        (* bta_hh_cb.p_cback)(BTA_HH_ENABLE_EVT, (tBTA_HH *)&status);
+    /* signal BTA call back event */
+    (* bta_hh_cb.p_cback)(BTA_HH_ENABLE_EVT, (tBTA_HH *)&status);
 }
 /*******************************************************************************
 **
@@ -126,7 +124,7 @@ void bta_hh_api_disable(void)
     {
         bta_hh_cb.w4_disable = TRUE;
 
-        for(xx = 0; xx < BTA_HH_MAX_DEVICE; xx ++)
+        for(xx = 0; xx < BTA_HH_MAX_KNOWN; xx ++)
         {
             /* send API_CLOSE event to every connected device */
             if ( bta_hh_cb.kdev[xx].state == BTA_HH_CONN_ST )
@@ -154,15 +152,24 @@ void bta_hh_api_disable(void)
 *******************************************************************************/
 void bta_hh_disc_cmpl(void)
 {
+    UINT8   xx;
     tBTA_HH_STATUS  status = BTA_HH_OK;
 
     /* Deregister with lower layer */
     if (HID_HostDeregister()!= HID_SUCCESS)
         status = BTA_HH_ERR;
 
-    bta_hh_cleanup_disable(status);
-}
+    /* free buffer in CB holding report descriptors */
+    for(xx = 0; xx < BTA_HH_MAX_KNOWN; xx ++)
+    {
+        utl_freebuf((void **)&bta_hh_cb.kdev[xx].dscp_info.descriptor.dsc_list);
+    }
+    utl_freebuf((void **)&bta_hh_cb.p_disc_db);
 
+    (* bta_hh_cb.p_cback)(BTA_HH_DISABLE_EVT, (tBTA_HH *)&status);
+    /* all connections are down, no waiting for diconnect */
+    memset(&bta_hh_cb, 0, sizeof(tBTA_HH_CB));
+}
 /*******************************************************************************
 **
 ** Function         bta_hh_sdp_cback
@@ -179,8 +186,7 @@ static void bta_hh_sdp_cback(UINT16 result, UINT16 attr_mask,
     UINT8              hdl;
     tBTA_HH_STATUS    status = BTA_HH_ERR_SDP;
 
-    /* make sure sdp succeeded and hh has not been disabled */
-    if ((result == SDP_SUCCESS) && (p_cb != NULL))
+    if (result == SDP_SUCCESS)
     {
         /* security is required for the connection, add attr_mask bit*/
         if (p_cb->sec_mask)
@@ -263,20 +269,20 @@ static void bta_hh_di_sdp_cback(UINT16 result)
          * set to 0xffff and we will allow the connection to go through. Spec mandates that DI
          * record be set, but many HID devices do not set this. So for IOP purposes, we allow the
          * connection to go through and update the DI record to invalid DI entry.*/
-    if (((result == SDP_SUCCESS) || (result == SDP_NO_RECS_MATCH)) && (p_cb != NULL))
+    if ((result == SDP_SUCCESS) || (result == SDP_NO_RECS_MATCH))
     {
         if(result == SDP_SUCCESS && SDP_GetNumDiRecords(bta_hh_cb.p_disc_db) != 0)
         {
             /* always update information with primary DI record */
             if (SDP_GetDiRecord(1, &di_rec, bta_hh_cb.p_disc_db) == SDP_SUCCESS)
             {
-                bta_hh_update_di_info(p_cb, di_rec.rec.vendor, di_rec.rec.product, di_rec.rec.version, 0);
+                bta_hh_update_di_info(p_cb, di_rec.rec.vendor, di_rec.rec.product, di_rec.rec.version);
             }
 
         }
         else /* no DI recrod available */
         {
-            bta_hh_update_di_info(p_cb, BTA_HH_VENDOR_ID_INVALID, 0, 0, 0);
+            bta_hh_update_di_info(p_cb, BTA_HH_VENDOR_ID_INVALID, 0, 0);
         }
 
         if ((ret = HID_HostGetSDPRecord(p_cb->addr,
@@ -326,7 +332,6 @@ void bta_hh_start_sdp(tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
 
     p_cb->sec_mask  = p_data->api_conn.sec_mask;
     p_cb->mode      = p_data->api_conn.mode;
-    bta_hh_cb.p_cur = p_cb;
 
     /* if previously virtually cabled device, skip SDP */
     if (p_cb->app_id)
@@ -350,7 +355,9 @@ void bta_hh_start_sdp(tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
                 bta_hh_cb.cb_index[hdl] = p_cb->index;
             }
             else
-                status = BTA_HH_ERR_NO_RES;
+            {
+                status = BTA_HH_ERR_SDP;
+            }
         }
         bta_hh_sm_execute(p_cb, BTA_HH_SDP_CMPL_EVT, (tBTA_HH_DATA *)&status);
 
@@ -524,7 +531,12 @@ void bta_hh_open_cmpl_act(tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
 
     /* initialize device driver */
     bta_hh_co_open(p_cb->hid_handle, p_cb->sub_class,
-                       p_cb->attr_mask,  p_cb->app_id);
+                   p_cb->attr_mask,  p_cb->app_id);
+
+    /* update SSR settings */
+    bta_sys_chg_ssr_config(BTA_ID_HH ,p_cb->app_id, p_cb->dscp_info.ssr_max_latency, p_cb->dscp_info.ssr_min_tout);
+    /* inform role manager */
+    bta_sys_conn_open( BTA_ID_HH ,p_cb->app_id, p_cb->addr);
 
     /* set protocol mode when not default report mode */
     if (p_cb->mode != BTA_HH_PROTO_RPT_MODE)
@@ -883,8 +895,7 @@ void bta_hh_maint_dev_act(tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
                 bta_hh_update_di_info(p_cb,
                                       p_dev_info->dscp_info.vendor_id,
                                       p_dev_info->dscp_info.product_id,
-                                      p_dev_info->dscp_info.version,
-                                      0);
+                                      p_dev_info->dscp_info.version);
 
                 /* add to BTA device list */
                 bta_hh_add_device_to_list(p_cb, dev_handle,
@@ -906,12 +917,13 @@ void bta_hh_maint_dev_act(tBTA_HH_DEV_CB *p_cb, tBTA_HH_DATA *p_data)
 #if BTA_HH_DEBUG
         bta_hh_trace_dev_db();
 #endif
-
         break;
+
     case BTA_HH_RMV_DEV_EVT:    /* remove device */
         dev_info.handle = (UINT8)p_dev_info->hdr.layer_specific;
-        bdcpy(dev_info.bda, p_cb->addr);
 
+        bdcpy(dev_info.bda, p_cb->addr);
+        if (p_cb->state != BTA_HH_CONN_ST )
         {
             if(HID_HostRemoveDev( dev_info.handle ) == HID_SUCCESS)
             {
@@ -1075,7 +1087,7 @@ static void bta_hh_cback (UINT8 dev_handle, UINT8 event, UINT32 data,
         utl_freebuf((void **)&pdata);
         break;
     case HID_HDEV_EVT_VC_UNPLUG:
-        for (xx = 0; xx < BTA_HH_MAX_DEVICE; xx++)
+        for (xx = 0; xx < BTA_HH_MAX_KNOWN; xx++)
         {
             if (bta_hh_cb.kdev[xx].hid_handle == dev_handle)
             {

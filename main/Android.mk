@@ -6,6 +6,12 @@ LOCAL_PATH:= $(call my-dir)
 
 include $(CLEAR_VARS)
 
+ifeq ($(BOARD_USES_ALSA_AUDIO),true)
+ifeq ($(TARGET_QCOM_AUDIO_VARIANT),caf)
+	LOCAL_CFLAGS += -DSAMPLE_RATE_48K
+endif
+endif
+
 # HAL layer
 LOCAL_SRC_FILES:= \
 	../btif/src/bluetooth.c
@@ -37,11 +43,6 @@ LOCAL_SRC_FILES += \
     ../btif/src/btif_sock_sdp.c \
     ../btif/src/btif_sock_util.c \
     ../btif/src/btif_pan.c \
-    ../btif/src/btif_gatt.c \
-    ../btif/src/btif_gatt_client.c \
-    ../btif/src/btif_gatt_server.c \
-    ../btif/src/btif_gatt_util.c \
-    ../btif/src/btif_gatt_test.c \
     ../btif/src/btif_config.c \
     ../btif/src/btif_config_util.cpp \
     ../btif/src/btif_profile_queue.c
@@ -55,9 +56,7 @@ LOCAL_SRC_FILES+= \
     ../btif/co/bta_av_co.c \
     ../btif/co/bta_hh_co.c \
     ../btif/co/bta_hl_co.c \
-    ../btif/co/bta_pan_co.c \
-    ../btif/co/bta_gattc_co.c \
-    ../btif/co/bta_gatts_co.c \
+    ../btif/co/bta_pan_co.c
 
 # sbc encoder
 LOCAL_SRC_FILES+= \
@@ -120,7 +119,6 @@ endif
 
 LOCAL_SHARED_LIBRARIES := \
     libcutils \
-    liblog \
     libpower \
     libbt-hci \
     libbt-utils

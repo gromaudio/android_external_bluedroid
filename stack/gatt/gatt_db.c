@@ -134,8 +134,7 @@ static tGATT_STATUS gatts_check_attr_readability(tGATT_ATTR16 *p_attr,
         return GATT_READ_NOT_PERMIT;
     }
 
-    if ((perm & GATT_READ_AUTH_REQUIRED ) && !(sec_flag & GATT_SEC_FLAG_LKEY_UNAUTHED) &&
-        !(sec_flag & BTM_SEC_FLAG_ENCRYPTED))
+    if ((perm & GATT_READ_AUTH_REQUIRED ) && !(sec_flag & GATT_SEC_FLAG_LKEY_UNAUTHED))
     {
         GATT_TRACE_ERROR0( "GATT_INSUF_AUTHENTICATION");
         return GATT_INSUF_AUTHENTICATION;
@@ -732,21 +731,14 @@ tGATT_STATUS gatts_write_attr_perm_check (tGATT_SVC_DB *p_db, UINT8 op_code,
                                    p_attr->permission,
                                    min_key_size);
 
-                if ((op_code == GATT_CMD_WRITE || op_code == GATT_REQ_WRITE)
-                    && (perm & GATT_WRITE_SIGNED_PERM))
+                if ((op_code == GATT_CMD_WRITE) && (perm & GATT_WRITE_SIGNED_PERM) )
                 {
                     /* use the rules for the mixed security see section 10.2.3*/
-                    /* use security mode 1 level 2 when the following condition follows */
-                    /* LE security mode 2 level 1 and LE security mode 1 level 2 */
-                    if ((perm & GATT_PERM_WRITE_SIGNED) && (perm & GATT_PERM_WRITE_ENCRYPTED))
+                    if (perm & GATT_PERM_WRITE_SIGNED)
                     {
                         perm = GATT_PERM_WRITE_ENCRYPTED;
                     }
-                    /* use security mode 1 level 3 when the following condition follows */
-                    /* LE security mode 2 level 2 and security mode 1 and LE */
-                    else if (((perm & GATT_PERM_WRITE_SIGNED_MITM) && (perm & GATT_PERM_WRITE_ENCRYPTED)) ||
-                              /* LE security mode 2 and security mode 1 level 3 */
-                             ((perm & GATT_WRITE_SIGNED_PERM) && (perm & GATT_PERM_WRITE_ENC_MITM)))
+                    else
                     {
                         perm = GATT_PERM_WRITE_ENC_MITM;
                     }
@@ -767,7 +759,6 @@ tGATT_STATUS gatts_write_attr_perm_check (tGATT_SVC_DB *p_db, UINT8 op_code,
                     status = GATT_WRITE_NOT_PERMIT;
                     GATT_TRACE_ERROR0( "gatts_write_attr_perm_check - GATT_WRITE_NOT_PERMIT");
                 }
-                /* require authentication, but not been authenticated */
                 else if ((perm & GATT_WRITE_AUTH_REQUIRED ) && !(sec_flag & GATT_SEC_FLAG_LKEY_UNAUTHED))
                 {
                     status = GATT_INSUF_AUTHENTICATION;
@@ -788,12 +779,6 @@ tGATT_STATUS gatts_write_attr_perm_check (tGATT_SVC_DB *p_db, UINT8 op_code,
                     status = GATT_INSUF_KEY_SIZE;
                     GATT_TRACE_ERROR0( "gatts_write_attr_perm_check - GATT_INSUF_KEY_SIZE");
                 }
-                /* LE security mode 2 attribute  */
-                else if (perm & GATT_WRITE_SIGNED_PERM && op_code != GATT_SIGN_CMD_WRITE && !(sec_flag & GATT_SEC_FLAG_ENCRYPTED))
-                {
-                    status = GATT_INSUF_AUTHENTICATION;
-                    GATT_TRACE_ERROR0( "gatts_write_attr_perm_check - GATT_INSUF_AUTHENTICATION: LE security mode 2 required");
-                }
                 else /* writable: must be char value declaration or char descritpors */
                 {
                     if(p_attr->uuid_type == GATT_ATTR_UUID_TYPE_16)
@@ -808,9 +793,6 @@ tGATT_STATUS gatts_write_attr_perm_check (tGATT_SVC_DB *p_db, UINT8 op_code,
                             break;
 
                         case GATT_UUID_CHAR_CLIENT_CONFIG:
-/* coverity[MISSING_BREAK] */
-/* intnended fall through, ignored */
-                            /* fall through */
                         case GATT_UUID_CHAR_SRVR_CONFIG:
                             max_size = 2;
                         case GATT_UUID_CHAR_DESCRIPTION:
@@ -846,7 +828,7 @@ tGATT_STATUS gatts_write_attr_perm_check (tGATT_SVC_DB *p_db, UINT8 op_code,
                         }
                         else if (len != max_size)    /* data does not match the required format */
                         {
-                            status = GATT_INVALID_ATTR_LEN;
+                            status = GATT_INVALID_PDU;
                             GATT_TRACE_ERROR0( "gatts_write_attr_perm_check - GATT_INVALID_PDU");
                         }
                         else

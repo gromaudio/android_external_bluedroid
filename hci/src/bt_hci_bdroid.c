@@ -47,11 +47,6 @@
 #define BTHCDBG(param, ...) {}
 #endif
 
-/* Vendor epilog process timeout period  */
-#ifndef EPILOG_TIMEOUT_MS
-#define EPILOG_TIMEOUT_MS 3000  // 3 seconds
-#endif
-
 /******************************************************************************
 **  Externs
 ******************************************************************************/
@@ -75,7 +70,6 @@ void btsnoop_close(void);
 bt_hc_callbacks_t *bt_hc_cbacks = NULL;
 BUFFER_Q tx_q;
 tHCI_IF *p_hci_if;
-volatile uint8_t fwcfg_acked;
 
 /******************************************************************************
 **  Local type definitions
@@ -87,8 +81,6 @@ typedef struct
     pthread_t       worker_thread;
     pthread_mutex_t mutex;
     pthread_cond_t  cond;
-    uint8_t         epilog_timer_created;
-    timer_t         epilog_timer_id;
 } bt_hc_cb_t;
 
 /******************************************************************************
@@ -114,63 +106,6 @@ void bthc_signal_event(uint16_t event)
     pthread_mutex_unlock(&hc_cb.mutex);
 }
 
-/*******************************************************************************
-**
-** Function        epilog_wait_timeout
-**
-** Description     Timeout thread of epilog watchdog timer
-**
-** Returns         None
-**
-*******************************************************************************/
-static void epilog_wait_timeout(union sigval arg)
-{
-    ALOGI("...epilog_wait_timeout...");
-    bthc_signal_event(HC_EVENT_EXIT);
-}
-
-/*******************************************************************************
-**
-** Function        epilog_wait_timer
-**
-** Description     Launch epilog watchdog timer
-**
-** Returns         None
-**
-*******************************************************************************/
-static void epilog_wait_timer(void)
-{
-    int status;
-    struct itimerspec ts;
-    struct sigevent se;
-    uint32_t timeout_ms = EPILOG_TIMEOUT_MS;
-
-    se.sigev_notify = SIGEV_THREAD;
-    se.sigev_value.sival_ptr = &hc_cb.epilog_timer_id;
-    se.sigev_notify_function = epilog_wait_timeout;
-    se.sigev_notify_attributes = NULL;
-
-    status = timer_create(CLOCK_MONOTONIC, &se, &hc_cb.epilog_timer_id);
-
-    if (status == 0)
-    {
-        hc_cb.epilog_timer_created = 1;
-        ts.it_value.tv_sec = timeout_ms/1000;
-        ts.it_value.tv_nsec = 1000000*(timeout_ms%1000);
-        ts.it_interval.tv_sec = 0;
-        ts.it_interval.tv_nsec = 0;
-
-        status = timer_settime(hc_cb.epilog_timer_id, 0, &ts, 0);
-        if (status == -1)
-            ALOGE("Failed to fire epilog watchdog timer");
-    }
-    else
-    {
-        ALOGE("Failed to create epilog watchdog timer");
-        hc_cb.epilog_timer_created = 0;
-    }
-}
-
 /*****************************************************************************
 **
 **   BLUETOOTH HOST/CONTROLLER INTERFACE LIBRARY FUNCTIONS
@@ -190,9 +125,6 @@ static int init(const bt_hc_callbacks_t* p_cb, unsigned char *local_bdaddr)
         ALOGE("init failed with no user callbacks!");
         return BT_HC_STATUS_FAIL;
     }
-
-    hc_cb.epilog_timer_created = 0;
-    fwcfg_acked = FALSE;
 
     /* store reference to user callbacks */
     bt_hc_cbacks = (bt_hc_callbacks_t *) p_cb;
@@ -363,26 +295,10 @@ static void cleanup( void )
 
     if (lib_running)
     {
-        if (fwcfg_acked == TRUE)
-        {
-            epilog_wait_timer();
-            bthc_signal_event(HC_EVENT_EPILOG);
-        }
-        else
-        {
-            bthc_signal_event(HC_EVENT_EXIT);
-        }
-
+        lib_running = 0;
+        bthc_signal_event(HC_EVENT_EXIT);
         pthread_join(hc_cb.worker_thread, NULL);
-
-        if (hc_cb.epilog_timer_created == 1)
-        {
-            timer_delete(hc_cb.epilog_timer_id);
-            hc_cb.epilog_timer_created = 0;
-        }
     }
-
-    lib_running = 0;
 
     lpm_cleanup();
     userial_close();
@@ -393,7 +309,6 @@ static void cleanup( void )
     if (bt_vnd_if)
         bt_vnd_if->cleanup();
 
-    fwcfg_acked = FALSE;
     bt_hc_cbacks = NULL;
 }
 
@@ -461,7 +376,8 @@ static void *bt_hc_worker_thread(void *arg)
 
         if (events & HC_EVENT_PRELOAD)
         {
-            userial_open(USERIAL_PORT_1);
+            if (userial_open(USERIAL_PORT_1) == FALSE)
+                break;
 
             /* Calling vendor-specific part */
             if (bt_vnd_if)
@@ -500,7 +416,6 @@ static void *bt_hc_worker_thread(void *arg)
             tx_cmd_pkts_pending = FALSE;
             HC_BT_HDR * sending_msg_que[64];
             int sending_msg_count = 0;
-            int sending_hci_cmd_pkts_count = 0;
             utils_lock();
             p_next_msg = tx_q.p_first;
             while (p_next_msg && sending_msg_count <
@@ -516,14 +431,12 @@ static void *bt_hc_worker_thread(void *arg)
                      *  gives back us credits through CommandCompleteEvent or
                      *  CommandStatusEvent.
                      */
-                    if ((tx_cmd_pkts_pending == TRUE) ||
-                        (sending_hci_cmd_pkts_count >= num_hci_cmd_pkts))
+                    if ((tx_cmd_pkts_pending == TRUE) || (num_hci_cmd_pkts <= 0))
                     {
                         tx_cmd_pkts_pending = TRUE;
                         p_next_msg = utils_getnext(p_next_msg);
                         continue;
                     }
-                    sending_hci_cmd_pkts_count++;
                 }
 
                 p_msg = p_next_msg;
@@ -565,21 +478,11 @@ static void *bt_hc_worker_thread(void *arg)
             lpm_wake_assert();
         }
 
-        if (events & HC_EVENT_EPILOG)
-        {
-            /* Calling vendor-specific part */
-            if (bt_vnd_if)
-                bt_vnd_if->op(BT_VND_OP_EPILOG, NULL);
-            else
-                break;  // equivalent to HC_EVENT_EXIT
-        }
-
         if (events & HC_EVENT_EXIT)
             break;
     }
 
     ALOGI("bt_hc_worker_thread exiting");
-    lib_running = 0;
 
     pthread_exit(NULL);
 
