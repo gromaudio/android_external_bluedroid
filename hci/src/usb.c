@@ -350,6 +350,17 @@ static libusb_device_handle *libusb_open_bt_device()
     }
 
     libusb_free_device_list(devs, 1);
+
+    // Some usb BT dongles already have kernel driver atached.
+    // We have to detach it first.
+    r = libusb_detach_kernel_driver(handle, 0);
+    if (r < 0)
+    {
+        ALOGE("usb_detach_kernel_driver 0 error %d\n", r);
+        return NULL;
+    }
+
+
     r = libusb_claim_interface(handle, 0);
     if (r < 0)
     {
