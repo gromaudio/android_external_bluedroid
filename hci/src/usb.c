@@ -48,8 +48,6 @@
 #define USB_DBG FALSE
 #endif
 
-#define USB_DBG TRUE
-
 #if (USB_DBG == TRUE)
 #define USBDBG ALOGD
 #define USBERR ALOGE
@@ -214,6 +212,14 @@ static int is_usb_match_idtable (struct bt_usb_device *id, struct libusb_device_
 {
     int ret = TRUE;
 
+    ALOGE("Match: %02X %02X %02X <-> %02X %02X %02X",   id->bDevClass,
+                                                        id->bDevSubClass,
+                                                        id->bDevProtocol,
+                                                        libusb_le16_to_cpu(desc->bDeviceClass),
+                                                        libusb_le16_to_cpu(desc->bDeviceSubClass),
+                                                        libusb_le16_to_cpu(desc->bDeviceProtocol));
+
+
     ret = ((id->bDevClass != libusb_le16_to_cpu(desc->bDeviceClass)) ? FALSE :
            (id->bDevSubClass != libusb_le16_to_cpu(desc->bDeviceSubClass)) ? FALSE :
            (id->bDevProtocol != libusb_le16_to_cpu(desc->bDeviceProtocol)) ? FALSE : TRUE);
@@ -294,7 +300,7 @@ static int is_btusb_device (struct libusb_device *dev)
     r = libusb_get_config_descriptor(dev, 0, &cfg_desc);
     if (r < 0)
     {
-        USBERR("libusb_get_config_descriptor  %x:%x failed ....%d\n", \
+        ALOGE("libusb_get_config_descriptor  %x:%x failed ....%d\n",
                desc.idVendor, desc.idProduct, r);
         return FALSE;
     }
@@ -359,7 +365,6 @@ static libusb_device_handle *libusb_open_bt_device()
         ALOGE("usb_detach_kernel_driver 0 error %d\n", r);
         return NULL;
     }
-
 
     r = libusb_claim_interface(handle, 0);
     if (r < 0)
@@ -949,7 +954,7 @@ uint16_t  usb_read(uint16_t msg_id, uint8_t *p_buffer, uint16_t len)
                 {
                     if (frames->actual_length == 0)
                     {
-                     /* Previous frame has been processed */
+	                 /* Previous frame has been processed */
                         usb.iso_frame_ndx++;
                         p_iso_hdr->offset = usb.iso_frame_ndx * iso_pkt_size;
                     }
