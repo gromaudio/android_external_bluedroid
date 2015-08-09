@@ -1,6 +1,4 @@
 /******************************************************************************
- * Copyright (c) 2013, The Linux Foundation. All rights reserved.
- * Not a Contribution.
  *
  *  Copyright (C) 2009-2012 Broadcom Corporation
  *
@@ -324,28 +322,36 @@ static inline rfc_slot_t* create_srv_accept_rfc_slot(rfc_slot_t* srv_rs, const b
                                         int open_handle, int new_listen_handle)
 {
     rfc_slot_t *accept_rs = alloc_rfc_slot(addr, srv_rs->service_name, srv_rs->service_uuid, srv_rs->scn, 0, FALSE);
-    clear_slot_flag(&accept_rs->f);
-    accept_rs->f.server = FALSE;
-    accept_rs->f.connected = TRUE;
-    accept_rs->security = srv_rs->security;
-    accept_rs->mtu = srv_rs->mtu;
-    accept_rs->role = srv_rs->role;
-    accept_rs->rfc_handle = open_handle;
-    accept_rs->rfc_port_handle = BTA_JvRfcommGetPortHdl(open_handle);
-     //now update listen rfc_handle of server slot
-    srv_rs->rfc_handle = new_listen_handle;
-    srv_rs->rfc_port_handle = BTA_JvRfcommGetPortHdl(new_listen_handle);
-    BTIF_TRACE_DEBUG4("create_srv_accept__rfc_slot(open_handle: 0x%x, new_listen_handle:"
-            "0x%x) accept_rs->rfc_handle:0x%x, srv_rs_listen->rfc_handle:0x%x"
-      ,open_handle, new_listen_handle, accept_rs->rfc_port_handle, srv_rs->rfc_port_handle);
-    asrt(accept_rs->rfc_port_handle != srv_rs->rfc_port_handle);
-  //now swap the slot id
-    uint32_t new_listen_id = accept_rs->id;
-    accept_rs->id = srv_rs->id;
-    srv_rs->id = new_listen_id;
-    return accept_rs;
-}
+    if( accept_rs)
+    {
+        clear_slot_flag(&accept_rs->f);
+        accept_rs->f.server = FALSE;
+        accept_rs->f.connected = TRUE;
+        accept_rs->security = srv_rs->security;
+        accept_rs->mtu = srv_rs->mtu;
+        accept_rs->role = srv_rs->role;
+        accept_rs->rfc_handle = open_handle;
+        accept_rs->rfc_port_handle = BTA_JvRfcommGetPortHdl(open_handle);
+        //now update listen rfc_handle of server slot
+        srv_rs->rfc_handle = new_listen_handle;
+        srv_rs->rfc_port_handle = BTA_JvRfcommGetPortHdl(new_listen_handle);
+        BTIF_TRACE_DEBUG4("create_srv_accept__rfc_slot(open_handle: 0x%x, new_listen_handle:"
+                "0x%x) accept_rs->rfc_handle:0x%x, srv_rs_listen->rfc_handle:0x%x"
+                ,open_handle, new_listen_handle, accept_rs->rfc_port_handle, srv_rs->rfc_port_handle);
+        asrt(accept_rs->rfc_port_handle != srv_rs->rfc_port_handle);
+        //now swap the slot id
+        uint32_t new_listen_id = accept_rs->id;
+        accept_rs->id = srv_rs->id;
+        srv_rs->id = new_listen_id;
 
+        return accept_rs;
+    }
+    else
+    {
+        APPL_TRACE_ERROR1(" accept_rs is NULL %s", __FUNCTION__);
+        return NULL;
+    }
+}
 bt_status_t btsock_rfc_listen(const char* service_name, const uint8_t* service_uuid, int channel,
                             int* sock_fd, int flags)
 {
@@ -370,14 +376,7 @@ bt_status_t btsock_rfc_listen(const char* service_name, const uint8_t* service_u
         service_uuid = UUID_SPP; //use serial port profile to listen to specified channel
     else
     {
-        APPL_TRACE_DEBUG1("service name to register: %s", service_name);
-        if (!strncmp(service_name, "SMS/MMS Message Access", strlen("SMS/MMS Message Access"))) {
-            channel = RESERVED_SCN_MAS0;
-            APPL_TRACE_DEBUG1("Registering MAP SDP for: %s", service_name);
-        } else if (!strncmp(service_name, "Email Message Access", strlen("Email Message Access"))) {
-            channel = RESERVED_SCN_MAS1;
-            APPL_TRACE_DEBUG1("Registering MAP SDP for: %s", service_name);
-        } else if (!strncmp(service_name, "OBEX File Transfer", strlen("OBEX File Transfer"))) {
+       if (!strncmp(service_name, "OBEX File Transfer", strlen("OBEX File Transfer"))) {
             channel = RESERVED_SCN_FTP;
             APPL_TRACE_DEBUG1("Registering FTP SDP for: %s", service_name);
         } else {
@@ -411,8 +410,7 @@ bt_status_t btsock_rfc_get_sockopt(int channel, btsock_option_type_t option_name
     int status = BT_STATUS_FAIL;
 
     APPL_TRACE_DEBUG1("btsock_rfc_get_sockopt channel is %d ", channel);
-    if((channel < 1) || (channel > MAX_RFC_CHANNEL) || (option_value == NULL) ||
-                                                       (option_len == NULL))
+    if((channel < 1) || (channel > 30) || (option_value == NULL) || (option_len == NULL))
     {
         APPL_TRACE_ERROR3("invalid rfc channel:%d or option_value:%p, option_len:%p",
                                              channel, option_value, option_len);
@@ -436,8 +434,8 @@ bt_status_t btsock_rfc_set_sockopt(int channel, btsock_option_type_t option_name
     int status = BT_STATUS_FAIL;
 
     APPL_TRACE_DEBUG1("btsock_rfc_get_sockopt channel is %d ", channel);
-    if((channel < 1) || (channel > MAX_RFC_CHANNEL) || (option_value == NULL) ||
-       (option_len <= 0) || (option_len > (int)sizeof(UINT8)))
+    if((channel < 1) || (channel > 30) || (option_value == NULL) || (option_len <= 0)
+                     || (option_len > (int)sizeof(UINT8)))
     {
         APPL_TRACE_ERROR3("invalid rfc channel:%d or option_value:%p, option_len:%d",
                                         channel, option_value, option_len);
@@ -1021,7 +1019,10 @@ static BOOLEAN flush_incoming_que_on_wr_signal(rfc_slot_t* rs)
 
     //app is ready to receive data, tell stack to start the data flow
     //fix me: need a jv flow control api to serialize the call in stack
-    PORT_FlowControl(rs->rfc_port_handle, TRUE);
+    APPL_TRACE_DEBUG3("enable data flow, rfc_handle:0x%x, rfc_port_handle:0x%x, user_id:%d",
+                        rs->rfc_handle, rs->rfc_port_handle, rs->id);
+    extern int PORT_FlowControl_MaxCredit(UINT16 handle, BOOLEAN enable);
+    PORT_FlowControl_MaxCredit(rs->rfc_port_handle, TRUE);
     return TRUE;
 }
 void btsock_rfc_signaled(int fd, int flags, uint32_t user_id)
@@ -1090,25 +1091,29 @@ int bta_co_rfc_data_incoming(void *user_data, BT_HDR *p_buf)
     rfc_slot_t* rs = find_rfc_slot_by_id(id);
     if(rs)
     {
-
-        int sent = send_data_to_app(rs->fd, p_buf);
-        switch(sent)
+        if(!GKI_queue_is_empty(&rs->incoming_que))
+            GKI_enqueue(&rs->incoming_que, p_buf);
+        else
         {
-            case SENT_NONE:
-            case SENT_PARTIAL:
-                //add it to the end of the queue
-                GKI_enqueue(&rs->incoming_que, p_buf);
-                //monitor the fd to get callback when app is ready to receive data
-                btsock_thread_add_fd(pth, rs->fd, BTSOCK_RFCOMM, SOCK_THREAD_FD_WR, rs->id);
-                break;
-            case SENT_ALL:
-                GKI_freebuf(p_buf);
-                ret = 1;//enable the data flow
-                break;
-            case SENT_FAILED:
-                GKI_freebuf(p_buf);
-                cleanup_rfc_slot(rs);
-                break;
+            int sent = send_data_to_app(rs->fd, p_buf);
+            switch(sent)
+            {
+                case SENT_NONE:
+                case SENT_PARTIAL:
+                    //add it to the end of the queue
+                    GKI_enqueue(&rs->incoming_que, p_buf);
+                    //monitor the fd to get callback when app is ready to receive data
+                    btsock_thread_add_fd(pth, rs->fd, BTSOCK_RFCOMM, SOCK_THREAD_FD_WR, rs->id);
+                    break;
+                case SENT_ALL:
+                    GKI_freebuf(p_buf);
+                    ret = 1;//enable the data flow
+                    break;
+                case SENT_FAILED:
+                    GKI_freebuf(p_buf);
+                    cleanup_rfc_slot(rs);
+                    break;
+            }
         }
      }
     unlock_slot(&slot_lock);

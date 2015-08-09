@@ -63,11 +63,12 @@ enum
     BTM_SCO_BAD_LENGTH,                 /* 16 Bad SCO over HCI data length */
     BTM_SUCCESS_NO_SECURITY,            /* 17 security passed, no security set  */
     BTM_FAILED_ON_SECURITY ,             /* 18 security failed                   */
-    BTM_REPEATED_ATTEMPTS               /* 19 repeated attempts for LE security requests */
+    BTM_REPEATED_ATTEMPTS,               /* 19 repeated attempts for LE security requests */
+    BTM_BAD_RF                            /*20 Event status is 0x3E or 62*/
 };
 typedef UINT8 tBTM_STATUS;
 
-#ifdef BLUETOOTH_QCOM_LE_INTL_SCAN
+#if (defined(BTA_HOST_INTERLEAVE_SEARCH) && BTA_HOST_INTERLEAVE_SEARCH == TRUE)
 typedef enum
 {
     BTM_BR_ONE,                         /*0 First state or BR/EDR scan 1*/
@@ -113,8 +114,8 @@ typedef struct
 /* Structure returned with HCI Raw Command complete callback */
 typedef struct
 {
-    UINT16  opcode;
-    UINT16  param_len;
+    UINT8  event_code;
+    UINT8  param_len;
     UINT8   *p_param_buf;
 } tBTM_RAW_CMPL;
 
@@ -196,6 +197,9 @@ typedef UINT8 (tBTM_FILTER_CB) (BD_ADDR bd_addr, DEV_CLASS dc);
 #define BTM_BLE_CONNECTABLE          0x0100
 #define BTM_BLE_MAX_CONNECTABLE      BTM_BLE_CONNECTABLE
 #define BTM_BLE_CONNECTABLE_MASK    (BTM_BLE_NON_CONNECTABLE | BTM_BLE_CONNECTABLE)
+
+#define BTM_BLE_IGNORE           0xFF
+
 
 /* Inquiry modes
  * Note: These modes are associated with the inquiry active values (BTM_*ACTIVE) */
@@ -595,7 +599,7 @@ typedef struct              /* contains the parameters passed to the inquiry fun
     BOOLEAN report_dup;                 /* report duplicated inquiry response with higher RSSI value */
     UINT8   filter_cond_type;           /* new devices, BD ADDR, COD, or No filtering */
     tBTM_INQ_FILT_COND  filter_cond;    /* filter value based on filter cond type */
-#ifdef BLUETOOTH_QCOM_LE_INTL_SCAN
+#if (defined(BTA_HOST_INTERLEAVE_SEARCH) && BTA_HOST_INTERLEAVE_SEARCH == TRUE)
     UINT8   intl_duration[4];              /*duration array storing the interleave scan's time portions*/
 #endif
 } tBTM_INQ_PARMS;
@@ -790,6 +794,30 @@ typedef struct
     BD_ADDR     rem_bda;
 } tBTM_RSSI_RESULTS;
 
+/*  Structure and callback function signature for rssi monitor command complete
+ ** and rssi event report
+ */
+typedef struct {
+    UINT8    status;
+    UINT8    subcmd;
+    union {
+        struct {
+            signed char low;
+            signed char upper;
+            UINT8  alert;
+        } read_result;
+        UINT8 enable;
+    }detail;
+}tBTM_RSSI_MONITOR_CMD_CPL_CB_PARAM;
+
+typedef struct {
+    UINT8 rssi_event_type;
+    signed char  rssi_value;
+}tBTM_RSSI_MONITOR_EVENT_CB_PARAM;
+
+typedef void (*tBTM_RSSI_MONITOR_CMD_CPL_CB)(BD_ADDR remote_bda, tBTM_RSSI_MONITOR_CMD_CPL_CB_PARAM *param);
+typedef void (*tBTM_RSSI_MONITOR_EVENT_CB)(BD_ADDR remote_bda, tBTM_RSSI_MONITOR_EVENT_CB_PARAM *param);
+
 /* Structure returned with read current TX power event (in tBTM_CMPL_CB callback function)
 ** in response to BTM_ReadTxPower call.
 */
@@ -871,7 +899,8 @@ typedef struct
 typedef struct
 {
     tBTM_BL_EVENT   event;  /* The event reported. */
-    UINT8           busy_level;/* when paging or inquiring, level is 10.
+    UINT8           busy_level;/* when paging or inquiring, level is between
+                                  17 to 21.
                                 * Otherwise, the number of ACL links. */
     UINT8           busy_level_flags; /* Notifies actual inquiry/page activities */
 } tBTM_BL_UPDATE_DATA;
@@ -1216,9 +1245,9 @@ typedef void (tBTM_ESCO_CBACK) (tBTM_ESCO_EVT event, tBTM_ESCO_EVT_DATA *p_data)
 #define BTM_SEC_SERVICE_TE_PHONE_ACCESS 30
 #define BTM_SEC_SERVICE_ME_PHONE_ACCESS 31
 
-#define BTM_SEC_SERVICE_HID_SEC_CTRL    32
-#define BTM_SEC_SERVICE_HID_NOSEC_CTRL  33
-#define BTM_SEC_SERVICE_HID_INTR        34
+#define BTM_SEC_SERVICE_HIDH_SEC_CTRL   32
+#define BTM_SEC_SERVICE_HIDH_NOSEC_CTRL 33
+#define BTM_SEC_SERVICE_HIDH_INTR       34
 #define BTM_SEC_SERVICE_BIP             35
 #define BTM_SEC_SERVICE_BIP_REF         36
 #define BTM_SEC_SERVICE_AVDTP           37
@@ -1235,12 +1264,16 @@ typedef void (tBTM_ESCO_CBACK) (tBTM_ESCO_EVT event, tBTM_ESCO_EVT_DATA *p_data)
 #define BTM_SEC_SERVICE_HDP_SNK         48
 #define BTM_SEC_SERVICE_HDP_SRC         49
 #define BTM_SEC_SERVICE_ATT             50
+#define BTM_SEC_SERVICE_HIDD_SEC_CTRL   51
+#define BTM_SEC_SERVICE_HIDD_NOSEC_CTRL 52
+#define BTM_SEC_SERVICE_HIDD_INTR       53
 
 /* Update these as services are added */
-#define BTM_SEC_SERVICE_FIRST_EMPTY     51
+#define BTM_SEC_SERVICE_FIRST_EMPTY     54
 
 #ifndef BTM_SEC_MAX_SERVICES
-#define BTM_SEC_MAX_SERVICES            65
+/* accomadate client profiles also */
+#define BTM_SEC_MAX_SERVICES            70
 #endif
 
 /************************************************************************************************
@@ -1303,9 +1336,9 @@ typedef void (tBTM_ESCO_CBACK) (tBTM_ESCO_EVT event, tBTM_ESCO_EVT_DATA *p_data)
 #define BTM_SEC_TRUST_ME_PHONE_ACCESS   (1 << BTM_SEC_SERVICE_ME_PHONE_ACCESS)
 
 /* 0..31 bits of mask[1] (Most Significant Word) */
-#define BTM_SEC_TRUST_HID_CTRL          (1 << (BTM_SEC_SERVICE_HID_SEC_CTRL - 32))
-#define BTM_SEC_TRUST_HID_NOSEC_CTRL    (1 << (BTM_SEC_SERVICE_HID_NOSEC_CTRL - 32))
-#define BTM_SEC_TRUST_HID_INTR          (1 << (BTM_SEC_SERVICE_HID_INTR - 32))
+#define BTM_SEC_TRUST_HIDH_CTRL         (1 << (BTM_SEC_SERVICE_HIDH_SEC_CTRL - 32))
+#define BTM_SEC_TRUST_HIDH_NOSEC_CTRL   (1 << (BTM_SEC_SERVICE_HIDH_NOSEC_CTRL - 32))
+#define BTM_SEC_TRUST_HIDH_INTR         (1 << (BTM_SEC_SERVICE_HIDH_INTR - 32))
 #define BTM_SEC_TRUST_BIP               (1 << (BTM_SEC_SERVICE_BIP - 32))
 #define BTM_SEC_TRUST_BIP_REF           (1 << (BTM_SEC_SERVICE_BIP_REF - 32))
 #define BTM_SEC_TRUST_AVDTP             (1 << (BTM_SEC_SERVICE_AVDTP - 32))
@@ -2536,6 +2569,17 @@ BTM_API extern BOOLEAN BTM_TryAllocateSCN(UINT8 scn);
 *******************************************************************************/
     BTM_API extern UINT16 BTM_IsInquiryActive (void);
 
+/*******************************************************************************
+**
+** Function         BTM_IsRnrActive
+**
+** Description      This function returns a current RNR status
+**
+** Returns          TRUE if RNR is active
+**                  FALSE incase RNR is not active
+**
+*******************************************************************************/
+    BTM_API extern UINT8 BTM_IsRnrActive(void);
 
 /*******************************************************************************
 **
@@ -3283,6 +3327,25 @@ BTM_API extern BOOLEAN BTM_TryAllocateSCN(UINT8 scn);
 **
 *******************************************************************************/
     BTM_API extern tBTM_STATUS BTM_ReadRSSI (BD_ADDR remote_bda, tBTM_CMPL_CB *p_cb);
+
+/*******************************************************************************
+**
+** Function
+**
+** Description      These functions are used to implement Rssi monitor on connection handle
+**
+** Returns          BTM_CMD_STARTED if command issued to controller.
+**                  BTM_NO_RESOURCES if couldn't allocate memory to issue command
+**                  BTM_UNKNOWN_ADDR if no active link with bd addr specified
+**                  BTM_BUSY if command is already in progress
+**
+*******************************************************************************/
+    BTM_API extern tBTM_STATUS BTM_Write_Rssi_Monitor_Threshold(BD_ADDR remote_bda, char min, char max);
+    BTM_API extern tBTM_STATUS BTM_Read_Rssi_Monitor_Threshold(BD_ADDR remote_bda);
+    BTM_API extern tBTM_STATUS BTM_Enable_Rssi_Monitor(BD_ADDR remote_bda, int enable);
+    extern void btm_handle_rssi_monitor_event(UINT8 *p, UINT8 evt_len);
+    extern void btm_setup_rssi_threshold_callback(tBTM_RSSI_MONITOR_CMD_CPL_CB cmd_cpl_callback,
+                                                  tBTM_RSSI_MONITOR_EVENT_CB evt_callback);
 
 
 /*******************************************************************************

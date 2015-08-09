@@ -187,12 +187,12 @@ tBTM_STATUS BTM_SetDiscoverability (UINT16 inq_mode, UINT16 window, UINT16 inter
 #if (BLE_INCLUDED == TRUE && BLE_INCLUDED == TRUE)
     if (HCI_LE_HOST_SUPPORTED(btm_cb.devcb.local_lmp_features[HCI_EXT_FEATURES_PAGE_1]))
     {
-        if (btm_ble_set_discoverability((UINT16)(inq_mode))
+        /*if (btm_ble_set_discoverability((UINT16)(inq_mode))
                             == BTM_SUCCESS)
         {
             btm_cb.btm_inq_vars.discoverable_mode &= (~BTM_BLE_DISCOVERABLE_MASK);
             btm_cb.btm_inq_vars.discoverable_mode |= (inq_mode & BTM_BLE_CONNECTABLE_MASK);
-        }
+        }*/
     }
     inq_mode &= ~BTM_BLE_DISCOVERABLE_MASK;
 #endif
@@ -739,6 +739,12 @@ UINT16 BTM_IsInquiryActive (void)
     return(btm_cb.btm_inq_vars.inq_active);
 }
 
+UINT8 BTM_IsRnrActive (void)
+{
+    BTM_TRACE_API0 ("BTM_IsRNRActive");
+
+    return (btm_cb.btm_inq_vars.remname_active);
+}
 
 
 /*******************************************************************************
@@ -756,7 +762,7 @@ tBTM_STATUS BTM_CancelInquiry(void)
 {
     tBTM_STATUS           status = BTM_SUCCESS;
     tBTM_INQUIRY_VAR_ST *p_inq = &btm_cb.btm_inq_vars;
-#ifdef BLUETOOTH_QCOM_LE_INTL_SCAN
+#if (defined(BTA_HOST_INTERLEAVE_SEARCH) && BTA_HOST_INTERLEAVE_SEARCH == TRUE)
     UINT8 active_mode=p_inq->inq_active;
 #endif
     BTM_TRACE_API0 ("BTM_CancelInquiry called");
@@ -785,7 +791,7 @@ tBTM_STATUS BTM_CancelInquiry(void)
         else
         {
             if (((p_inq->inqparms.mode & BTM_BR_INQUIRY_MASK) != 0)
-#ifdef BLUETOOTH_QCOM_LE_INTL_SCAN
+#if (defined(BTA_HOST_INTERLEAVE_SEARCH) && BTA_HOST_INTERLEAVE_SEARCH == TRUE)
             &&(active_mode & BTM_BR_INQUIRY_MASK)
 #endif
             )
@@ -795,7 +801,7 @@ tBTM_STATUS BTM_CancelInquiry(void)
             }
 #if BLE_INCLUDED == TRUE
             if (((p_inq->inqparms.mode & BTM_BLE_INQUIRY_MASK) != 0)
-#ifdef BLUETOOTH_QCOM_LE_INTL_SCAN
+#if (defined(BTA_HOST_INTERLEAVE_SEARCH) && BTA_HOST_INTERLEAVE_SEARCH == TRUE)
             &&(active_mode & BTM_LE_INQ_ACTIVE_MASK)
 #endif
             )
@@ -810,8 +816,8 @@ tBTM_STATUS BTM_CancelInquiry(void)
          */
 #endif
 
-        p_inq->inq_counter++;
-        btm_clr_inq_result_flt();
+         p_inq->inq_counter++;
+         btm_clr_inq_result_flt();
     }
 
     return (status);
@@ -860,7 +866,27 @@ tBTM_STATUS BTM_StartInquiry (tBTM_INQ_PARMS *p_inqparms, tBTM_INQ_RESULTS_CB *p
     /* Only one active inquiry is allowed in this implementation.
        Also do not allow an inquiry if the inquiry filter is being updated */
     if (p_inq->inq_active || p_inq->inqfilt_active)
-        return (BTM_BUSY);
+    {
+#if (defined BLE_INCLUDED && BLE_INCLUDED == TRUE)
+        /*check if LE observe is already running*/
+        if(p_inq->scan_type==INQ_LE_OBSERVE && p_inq->p_inq_ble_results_cb!=NULL)
+        {
+            BTM_TRACE_API0("BTM_StartInquiry: LE observe in progress");
+            p_inq->scan_type = INQ_GENERAL;
+            p_inq->inq_active = BTM_INQUIRY_INACTIVE;
+            btm_cb.ble_ctr_cb.inq_var.scan_type = BTM_BLE_SCAN_MODE_NONE;
+            btm_cb.ble_ctr_cb.inq_var.proc_mode = BTM_BLE_INQUIRY_NONE;
+            btsnd_hcic_ble_set_scan_enable (BTM_BLE_SCAN_DISABLE, BTM_BLE_DUPLICATE_ENABLE);
+        }
+        else
+#endif
+        {
+            return (BTM_BUSY);
+            BTM_TRACE_API0("BTM_StartInquiry: return BUSY");
+        }
+    }
+    else
+        p_inq->scan_type = INQ_GENERAL;
 
         /*** Make sure the device is ready ***/
     if (!BTM_IsDeviceUp())
@@ -875,7 +901,7 @@ tBTM_STATUS BTM_StartInquiry (tBTM_INQ_PARMS *p_inqparms, tBTM_INQ_RESULTS_CB *p
         )
         return (BTM_ILLEGAL_VALUE);
 
-#ifdef BLUETOOTH_QCOM_LE_INTL_SCAN
+#if (defined(BTA_HOST_INTERLEAVE_SEARCH) && BTA_HOST_INTERLEAVE_SEARCH == TRUE)
         if(p_inq->next_state==BTM_FINISH)
             return BTM_ILLEGAL_VALUE;
 #endif
@@ -893,11 +919,11 @@ tBTM_STATUS BTM_StartInquiry (tBTM_INQ_PARMS *p_inqparms, tBTM_INQ_RESULTS_CB *p
 
     BTM_TRACE_DEBUG1("BTM_StartInquiry: p_inq->inq_active = 0x%02x", p_inq->inq_active);
 
-//interleave scan minimal conditions
-#if defined(BLUETOOTH_QCOM_LE_INTL_SCAN)&& BLE_INCLUDED==TRUE
+/* interleave scan minimal conditions */
+#if (BLE_INCLUDED==TRUE && (defined(BTA_HOST_INTERLEAVE_SEARCH) && BTA_HOST_INTERLEAVE_SEARCH == TRUE))
 
-//check if both modes are present
-    if((p_inqparms->mode & BTM_BLE_INQUIRY_MASK) && (p_inqparms->mode & BTM_BR_INQUIRY_MASK))//both modes present
+    /* check if both modes are present */
+    if((p_inqparms->mode & BTM_BLE_INQUIRY_MASK) && (p_inqparms->mode & BTM_BR_INQUIRY_MASK))
     {
         BTM_TRACE_API0("BTM:Interleave Inquiry Mode Set");
         p_inqparms->duration=p_inqparms->intl_duration[p_inq->next_state];
@@ -915,15 +941,17 @@ tBTM_STATUS BTM_StartInquiry (tBTM_INQ_PARMS *p_inqparms, tBTM_INQ_RESULTS_CB *p
 /* start LE inquiry here if requested */
 #if BLE_INCLUDED == TRUE
     if ((p_inqparms->mode & BTM_BLE_INQUIRY_MASK)
-#ifdef BLUETOOTH_QCOM_LE_INTL_SCAN
-        &&(p_inq->next_state==BTM_BLE_ONE || p_inq->next_state==BTM_BLE_TWO || p_inq->next_state==BTM_NO_INTERLEAVING)
+#if (defined(BTA_HOST_INTERLEAVE_SEARCH) && BTA_HOST_INTERLEAVE_SEARCH == TRUE)
+        &&(p_inq->next_state==BTM_BLE_ONE || p_inq->next_state==BTM_BLE_TWO ||
+           p_inq->next_state==BTM_NO_INTERLEAVING)
 #endif
         )
 
     {
-#ifdef BLUETOOTH_QCOM_LE_INTL_SCAN
+#if (defined(BTA_HOST_INTERLEAVE_SEARCH) && BTA_HOST_INTERLEAVE_SEARCH == TRUE)
         p_inq->inq_active = (p_inqparms->mode & BTM_BLE_INQUIRY_MASK);
-        BTM_TRACE_API2("BTM:Starting LE Scan with duration %d and activeMode:0x%02x",p_inqparms->duration,(p_inqparms->mode & BTM_BLE_INQUIRY_MASK));
+        BTM_TRACE_API2("BTM:Starting LE Scan with duration %d and activeMode:0x%02x",
+                       p_inqparms->duration, (p_inqparms->mode & BTM_BLE_INQUIRY_MASK));
 #endif
         if (!HCI_LE_HOST_SUPPORTED(btm_cb.devcb.local_lmp_features[HCI_EXT_FEATURES_PAGE_1]))
         {
@@ -937,25 +965,26 @@ tBTM_STATUS BTM_StartInquiry (tBTM_INQ_PARMS *p_inqparms, tBTM_INQ_RESULTS_CB *p
             BTM_TRACE_ERROR0("Err Starting LE Inquiry.");
             p_inq->inqparms.mode &= ~ BTM_BLE_INQUIRY_MASK;
         }
-#ifndef BLUETOOTH_QCOM_LE_INTL_SCAN
+#if (!defined(BTA_HOST_INTERLEAVE_SEARCH) || BTA_HOST_INTERLEAVE_SEARCH == FALSE)
         p_inqparms->mode &= ~BTM_BLE_INQUIRY_MASK;
 #endif
 
-#ifdef BLUETOOTH_QCOM_LE_INTL_SCAN
+#if (defined(BTA_HOST_INTERLEAVE_SEARCH) && BTA_HOST_INTERLEAVE_SEARCH == TRUE)
         if(p_inq->next_state==BTM_NO_INTERLEAVING)
         {
             p_inq->next_state=BTM_FINISH;
         }
         else
         {
-            BTM_TRACE_API1("BTM:Interleaving: started LE scan, Advancing to next state: %d", p_inq->next_state+1);
+            BTM_TRACE_API1("BTM:Interleaving: started LE scan, Advancing to next state: %d",
+                           p_inq->next_state+1);
             p_inq->next_state+=1;
         }
-        //reset next_state if status <> BTM_Started
+        /* reset next_state if status <> BTM_Started */
         if(status!=BTM_CMD_STARTED)
             p_inq->next_state=BTM_BR_ONE;
 
-        //if interleave scan..return here
+        /* if interleave scan..return here */
         return status;
 #endif
 
@@ -967,9 +996,11 @@ tBTM_STATUS BTM_StartInquiry (tBTM_INQ_PARMS *p_inqparms, tBTM_INQ_RESULTS_CB *p
     /* we're done with this routine if BR/EDR inquiry is not desired. */
     if ((p_inqparms->mode & BTM_BR_INQUIRY_MASK) == BTM_INQUIRY_NONE)
         return status;
-    /*BR/EDR inquiry portion*/
-#ifdef BLUETOOTH_QCOM_LE_INTL_SCAN
-    if((p_inq->next_state==BTM_BR_ONE || p_inq->next_state==BTM_BR_TWO || p_inq->next_state==BTM_NO_INTERLEAVING ))
+
+    /* BR/EDR inquiry portion */
+#if (defined(BTA_HOST_INTERLEAVE_SEARCH) && BTA_HOST_INTERLEAVE_SEARCH == TRUE)
+    if((p_inq->next_state==BTM_BR_ONE || p_inq->next_state==BTM_BR_TWO ||
+        p_inq->next_state==BTM_NO_INTERLEAVING ))
     {
         p_inq->inq_active = (p_inqparms->mode & BTM_BR_INQUIRY_MASK);
 #endif
@@ -1003,23 +1034,26 @@ tBTM_STATUS BTM_StartInquiry (tBTM_INQ_PARMS *p_inqparms, tBTM_INQ_RESULTS_CB *p
     }
 
     /* Before beginning the inquiry the current filter must be cleared, so initiate the command */
-    if ((status = btm_set_inq_event_filter (p_inqparms->filter_cond_type, &p_inqparms->filter_cond)) != BTM_CMD_STARTED)
+    if ((status = btm_set_inq_event_filter (p_inqparms->filter_cond_type,
+                                            &p_inqparms->filter_cond)) != BTM_CMD_STARTED)
         p_inq->state = BTM_INQ_INACTIVE_STATE;
 #endif
 
-#ifdef BLUETOOTH_QCOM_LE_INTL_SCAN
-        if(p_inq->next_state==BTM_NO_INTERLEAVING)
+#if (defined(BTA_HOST_INTERLEAVE_SEARCH) && BTA_HOST_INTERLEAVE_SEARCH == TRUE)
+        if (p_inq->next_state==BTM_NO_INTERLEAVING)
             p_inq->next_state=BTM_FINISH;
         else
         {
-            BTM_TRACE_API1("BTM:Interleaving: Started BTM inq, Advancing to next state: %d", p_inq->next_state+1);
+            BTM_TRACE_API1("BTM:Interleaving: Started BTM inq, Advancing to next state: %d",
+                           p_inq->next_state+1);
             p_inq->next_state+=1;
         }
      }
-     if(status!=BTM_CMD_STARTED)
+     if (status!=BTM_CMD_STARTED)
      {
-        //Some error beginning the scan process.
-        //Reset the next_state parameter.. Do we need to reset the inq_active also?
+         /* Some error beginning the scan process.
+            Reset the next_state parameter.. Do we need to reset the inq_active also?
+         */
         BTM_TRACE_API1("BTM:Interleaving: Error in Starting inquiry, status: 0x%02x", status);
         p_inq->next_state=BTM_BR_ONE;
      }
@@ -1057,11 +1091,6 @@ tBTM_STATUS  BTM_ReadRemoteDeviceName (BD_ADDR remote_bda, tBTM_CMPL_CB *p_cb)
     tBTM_INQ_INFO   *p_cur = NULL;
     tINQ_DB_ENT     *p_i;
 
-#if BLE_INCLUDED == TRUE
-    tBT_DEVICE_TYPE dev_type;
-    tBLE_ADDR_TYPE  addr_type;
-#endif
-
     BTM_TRACE_API6 ("BTM_ReadRemoteDeviceName: bd addr [%02x%02x%02x%02x%02x%02x]",
                remote_bda[0], remote_bda[1], remote_bda[2],
                remote_bda[3], remote_bda[4], remote_bda[5]);
@@ -1078,8 +1107,7 @@ tBTM_STATUS  BTM_ReadRemoteDeviceName (BD_ADDR remote_bda, tBTM_CMPL_CB *p_cb)
     BTM_TRACE_API0 ("no device found in inquiry db");
 
 #if (BLE_INCLUDED == TRUE)
-    BTM_ReadDevInfo(remote_bda, &dev_type, &addr_type);
-    if (dev_type == BT_DEVICE_TYPE_BLE)
+    if (BTM_UseLeLink(remote_bda))
     {
         return btm_ble_read_remote_name(remote_bda, p_cur, p_cb);
     }
@@ -1110,19 +1138,13 @@ tBTM_STATUS  BTM_CancelRemoteDeviceName (void)
 {
     tBTM_INQUIRY_VAR_ST *p_inq = &btm_cb.btm_inq_vars;
 
-#if BLE_INCLUDED == TRUE
-    tBT_DEVICE_TYPE dev_type;
-    tBLE_ADDR_TYPE  addr_type;
-#endif
-
     BTM_TRACE_API0 ("BTM_CancelRemoteDeviceName()");
 
     /* Make sure there is not already one in progress */
     if (p_inq->remname_active)
     {
 #if BLE_INCLUDED == TRUE
-        BTM_ReadDevInfo(p_inq->remname_bda, &dev_type, &addr_type);
-        if (dev_type == BT_DEVICE_TYPE_BLE)
+        if (BTM_UseLeLink(p_inq->remname_bda))
         {
             if (btm_ble_cancel_remote_name(p_inq->remname_bda))
                 return (BTM_CMD_STARTED);
@@ -2192,7 +2214,7 @@ void btm_process_inq_results (UINT8 *p, UINT8 inq_res_mode)
         */
         else if (p_i->inq_count == p_inq->inq_counter
 #if (BLE_INCLUDED == TRUE )
-            && (p_i->inq_info.results.device_type & BT_DEVICE_TYPE_BREDR)
+            && (p_i->inq_info.results.device_type == BT_DEVICE_TYPE_BREDR)
 #endif
             )
             is_new = FALSE;
@@ -2388,22 +2410,31 @@ void btm_process_inq_complete (UINT8 status, UINT8 mode)
     tBTM_INQ_INFO  *p_cur;
     UINT8           tempstate;
 #endif
-#ifdef BLUETOOTH_QCOM_LE_INTL_SCAN
-    //inquiry inactive case happens when inquiry is cancelled...Make mode 0 for no further inquiries from the current inquiry process
+#if (defined(BTA_HOST_INTERLEAVE_SEARCH) && BTA_HOST_INTERLEAVE_SEARCH == TRUE)
+    /* inquiry inactive case happens when inquiry is cancelled.
+       Make mode 0 for no further inquiries from the current inquiry process
+    */
     if(status!=HCI_SUCCESS || p_inq->next_state==BTM_FINISH || !p_inq->inq_active)
     {
-        p_inq->next_state=BTM_BR_ONE; //re-initialize for next inquiry request
-        //make the mode 0 here:
+        /* re-initialize for next inquiry request */
+        p_inq->next_state=BTM_BR_ONE;
+        /* make the mode 0 here */
         p_inq->inqparms.mode &= ~(p_inq->inqparms.mode);
 
     }
 #endif
 
-#ifndef BLUETOOTH_QCOM_LE_INTL_SCAN
+#if (!defined(BTA_HOST_INTERLEAVE_SEARCH) || BTA_HOST_INTERLEAVE_SEARCH == FALSE)
     p_inq->inqparms.mode &= ~(mode);
 #endif
 
-
+    if(p_inq->scan_type == INQ_LE_OBSERVE && !p_inq->inq_active)
+    {
+        /*end of LE observe*/
+        p_inq->p_inq_ble_results_cb = (tBTM_INQ_RESULTS_CB *) NULL;
+        p_inq->p_inq_ble_cmpl_cb = (tBTM_CMPL_CB *) NULL;
+        p_inq->scan_type=INQ_NONE;
+    }
 
 
 #if (BTM_INQ_DEBUG == TRUE)
@@ -2467,14 +2498,27 @@ void btm_process_inq_complete (UINT8 status, UINT8 mode)
             if (p_inq_cb)
                 (p_inq_cb)((tBTM_INQUIRY_CMPL *) &p_inq->inq_cmpl_info);
         }
-#ifdef BLUETOOTH_QCOM_LE_INTL_SCAN
-            if(p_inq->inqparms.mode != 0 && !(p_inq->inq_active & BTM_PERIODIC_INQUIRY_ACTIVE))//interleaving case
+#if (defined(BTA_HOST_INTERLEAVE_SEARCH) && BTA_HOST_INTERLEAVE_SEARCH == TRUE)
+            if(p_inq->inqparms.mode != 0 && !(p_inq->inq_active & BTM_PERIODIC_INQUIRY_ACTIVE))
             {
-                //make inquiry inactive for next iteration
+                /* make inquiry inactive for next iteration */
                 p_inq->inq_active = BTM_INQUIRY_INACTIVE;
-                //call the inquiry again
+                /* call the inquiry again */
                 BTM_StartInquiry(&p_inq->inqparms,p_inq->p_inq_results_cb,p_inq->p_inq_cmpl_cb);
+                return;
             }
+#endif
+    }
+    if(p_inq->inqparms.mode == 0 && p_inq->scan_type == INQ_GENERAL)//this inquiry is complete
+    {
+        p_inq->scan_type = INQ_NONE;
+#if (defined BLE_INCLUDED && BLE_INCLUDED == TRUE)
+        /* check if the LE observe is pending */
+        if(p_inq->p_inq_ble_results_cb != NULL)
+        {
+            BTM_TRACE_DEBUG0("BTM Inq Compl: resuming a pending LE scan");
+            BTM_BleObserve(1,0, p_inq->p_inq_ble_results_cb, p_inq->p_inq_ble_cmpl_cb);
+        }
 #endif
     }
 #if (BTM_INQ_DEBUG == TRUE)
@@ -2645,11 +2689,6 @@ void btm_process_remote_name (BD_ADDR bda, BD_NAME bdn, UINT16 evt_len, UINT8 hc
     UINT8                  *p_n;
     tBTM_INQ_INFO          *p_cur;
 #endif
-#if BLE_INCLUDED == TRUE
-    tBT_DEVICE_TYPE     dev_type;
-    tBLE_ADDR_TYPE      addr_type;
-#endif
-
 
     if (bda != NULL)
     {
@@ -2671,8 +2710,7 @@ void btm_process_remote_name (BD_ADDR bda, BD_NAME bdn, UINT16 evt_len, UINT8 hc
 
 	{
 #if BLE_INCLUDED == TRUE
-        BTM_ReadDevInfo(p_inq->remname_bda, &dev_type, &addr_type);
-        if (dev_type == BT_DEVICE_TYPE_BLE)
+        if (BTM_UseLeLink(p_inq->remname_bda))
         {
             if (hci_status == HCI_ERR_UNSPECIFIED)
                 btm_ble_cancel_remote_name(p_inq->remname_bda);
@@ -2770,8 +2808,7 @@ void btm_process_remote_name (BD_ADDR bda, BD_NAME bdn, UINT16 evt_len, UINT8 hc
             {
                 p_cur->remote_name_state = BTM_INQ_RMT_NAME_PENDING;
 #if (BLE_INCLUDED == TRUE)
-                BTM_ReadDevInfo(remote_bda, &dev_type, &addr_type);
-                if (dev_type == BT_DEVICE_TYPE_BLE)
+                if (BTM_UseLeLink(remote_bda))
                 {
                     if (btm_ble_read_remote_name(remote_bda, p_cur, p_cb) != BTM_CMD_STARTED)
                         p_cur->remote_name_state = BTM_INQ_RMT_NAME_FAILED;

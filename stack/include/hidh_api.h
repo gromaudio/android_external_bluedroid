@@ -42,6 +42,7 @@ enum {
 #define HID_SSR_MIN_TOUT         0x0100
 
 #define HID_SEC_REQUIRED         0x8000
+#define HID_ATTR_MASK_IGNORE     0
 
 
 /*****************************************************************************
@@ -61,7 +62,6 @@ HID_HDEV_EVT_IN_REPORT  Device sent an input report     Data=Report Type pdata= 
                                                         (GKI buffer having report data.)
 HID_HDEV_EVT_HANDSHAKE  Device sent SET_REPORT          Data=Result-code pdata=NA.
 HID_HDEV_EVT_VC_UNPLUG  Device sent Virtual Unplug      Data=NA. pdata=NA.
-HID_HDEV_EVT_PERFORM_SDP  Unknown Device initiating hid connection, perform sdp Data=NA. pdata=BD Address.
 */
 
 enum
@@ -74,11 +74,10 @@ enum
     HID_HDEV_EVT_CTRL_DATA,
     HID_HDEV_EVT_CTRL_DATC,
     HID_HDEV_EVT_HANDSHAKE,
-    HID_HDEV_EVT_VC_UNPLUG,
-    HID_HDEV_EVT_PERFORM_SDP,
-
+    HID_HDEV_EVT_VC_UNPLUG
 };
 typedef void (tHID_HOST_DEV_CALLBACK) (UINT8 dev_handle,
+                                       BD_ADDR addr,
                                        UINT8 event, /* Event from HID-DEVICE. */
                                        UINT32 data, /* Integer data corresponding to the event.*/
                                        BT_HDR *p_buf ); /* Pointer data corresponding to the event. */
@@ -208,6 +207,18 @@ HID_API extern tHID_STATUS HID_HostSetSecurityLevel( char serv_name[], UINT8 sec
 
 /*******************************************************************************
 **
+** Function         hid_known_hid_device
+**
+** Description      This function checks if this device is  of type HID Device
+**
+** Returns          TRUE if device exists else FALSE
+**
+*******************************************************************************/
+BOOLEAN hid_known_hid_device (BD_ADDR bd_addr);
+
+
+/*******************************************************************************
+**
 ** Function         HID_HostSetTraceLevel
 **
 ** Description      This function sets the trace level for HID Host. If called with
@@ -218,17 +229,6 @@ HID_API extern tHID_STATUS HID_HostSetSecurityLevel( char serv_name[], UINT8 sec
 *******************************************************************************/
 HID_API extern UINT8 HID_HostSetTraceLevel (UINT8 new_level);
 
-/*******************************************************************************
-**
-** Function         HID_HostSendL2capConnectRsp
-**
-** Description      This function sends back the pending l2cap connect response for incoming HID
-**                       connect from unknown device.
-**
-** Returns          void
-**
-*******************************************************************************/
-HID_API extern void HID_HostSendL2capConnectRsp (UINT8 status);
 #ifdef __cplusplus
 }
 #endif

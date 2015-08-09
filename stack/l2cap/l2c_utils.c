@@ -252,6 +252,8 @@ tL2C_LCB  *l2cu_find_lcb_by_bd_addr (BD_ADDR p_bd_addr)
 ** Function         l2cu_get_conn_role
 **
 ** Description      Determine the desired role (master or slave) of a link.
+**                  If it is the previous connected remote device, use the same
+**                  role as previous used role.
 **                  If already got a slave link, this one must be a master. If
 **                  already got at least 1 link where we are the master, make this
 **                  also a master.
@@ -259,8 +261,17 @@ tL2C_LCB  *l2cu_find_lcb_by_bd_addr (BD_ADDR p_bd_addr)
 ** Returns          HCI_ROLE_MASTER or HCI_ROLE_SLAVE
 **
 *******************************************************************************/
-UINT8 l2cu_get_conn_role (tL2C_LCB *p_this_lcb)
+UINT8 l2cu_get_conn_role (BD_ADDR bd_addr)
 {
+    UINT8 i;
+    for (i = 0; i < BTM_ROLE_DEVICE_NUM; i++) {
+        if ((btm_cb.previous_connected_role[i] != BTM_ROLE_UNDEFINED) &&
+            (!bdcmp(bd_addr, btm_cb.previous_connected_remote_addr[i]))) {
+            L2CAP_TRACE_WARNING1 ("l2cu_get_conn_role %d",
+                                  btm_cb.previous_connected_role[i]);
+            return btm_cb.previous_connected_role[i];
+        }
+    }
     return l2cb.desire_role;
 }
 
@@ -289,11 +300,20 @@ BT_HDR *l2cu_build_header (tL2C_LCB *p_lcb, UINT16 len, UINT8 cmd, UINT8 id)
     p = (UINT8 *)(p_buf + 1) + L2CAP_SEND_CMD_OFFSET;
 
     /* Put in HCI header - handle + pkt boundary */
-#if (L2CAP_NON_FLUSHABLE_PB_INCLUDED == TRUE)
-    UINT16_TO_STREAM (p, p_lcb->handle | l2cb.non_flushable_pbf);
-#else
-    UINT16_TO_STREAM (p, (p_lcb->handle | (L2CAP_PKT_START << L2CAP_PKT_TYPE_SHIFT)));
+#if (BLE_INCLUDED == TRUE)
+    if (p_lcb->is_ble_link)
+    {
+        UINT16_TO_STREAM (p, (p_lcb->handle | (L2CAP_PKT_START_NON_FLUSHABLE << L2CAP_PKT_TYPE_SHIFT)));
+    }
+    else
 #endif
+    {
+#if (L2CAP_NON_FLUSHABLE_PB_INCLUDED == TRUE)
+        UINT16_TO_STREAM (p, p_lcb->handle | l2cb.non_flushable_pbf);
+#else
+        UINT16_TO_STREAM (p, (p_lcb->handle | (L2CAP_PKT_START << L2CAP_PKT_TYPE_SHIFT)));
+#endif
+    }
 
     UINT16_TO_STREAM (p, len + L2CAP_PKT_OVERHEAD + L2CAP_CMD_OVERHEAD);
     UINT16_TO_STREAM (p, len + L2CAP_CMD_OVERHEAD);
@@ -3169,22 +3189,11 @@ void l2cu_set_acl_hci_header (BT_HDR *p_buf, tL2C_CCB *p_ccb)
     /* Set the pointer to the beginning of the data minus 4 bytes for the packet header */
     p = (UINT8 *)(p_buf + 1) + p_buf->offset - HCI_DATA_PREAMBLE_SIZE;
 
-#if (L2CAP_NON_FLUSHABLE_PB_INCLUDED == TRUE)
-    if ( (((p_buf->layer_specific & L2CAP_FLUSHABLE_MASK) == L2CAP_FLUSHABLE_CH_BASED) && (p_ccb->is_flushable))
-            || ((p_buf->layer_specific & L2CAP_FLUSHABLE_MASK) == L2CAP_FLUSHABLE_PKT) )
-    {
-        UINT16_TO_STREAM (p, p_ccb->p_lcb->handle | (L2CAP_PKT_START << L2CAP_PKT_TYPE_SHIFT));
-    }
-    else
-    {
-        UINT16_TO_STREAM (p, p_ccb->p_lcb->handle | l2cb.non_flushable_pbf);
-    }
-#else
-    UINT16_TO_STREAM (p, p_ccb->p_lcb->handle | (L2CAP_PKT_START << L2CAP_PKT_TYPE_SHIFT));
-#endif
 #if (BLE_INCLUDED == TRUE)
     if (p_ccb->p_lcb->is_ble_link)
     {
+        UINT16_TO_STREAM (p, p_ccb->p_lcb->handle | (L2CAP_PKT_START_NON_FLUSHABLE << L2CAP_PKT_TYPE_SHIFT));
+
         /* The HCI transport will segment the buffers. */
         if (p_buf->len > btu_cb.hcit_ble_acl_data_size)
         {
@@ -3198,6 +3207,19 @@ void l2cu_set_acl_hci_header (BT_HDR *p_buf, tL2C_CCB *p_ccb)
     else
 #endif
     {
+#if (L2CAP_NON_FLUSHABLE_PB_INCLUDED == TRUE)
+        if ( (((p_buf->layer_specific & L2CAP_FLUSHABLE_MASK) == L2CAP_FLUSHABLE_CH_BASED) && (p_ccb->is_flushable))
+                || ((p_buf->layer_specific & L2CAP_FLUSHABLE_MASK) == L2CAP_FLUSHABLE_PKT) )
+        {
+            UINT16_TO_STREAM (p, p_ccb->p_lcb->handle | (L2CAP_PKT_START << L2CAP_PKT_TYPE_SHIFT));
+        }
+        else
+        {
+            UINT16_TO_STREAM (p, p_ccb->p_lcb->handle | l2cb.non_flushable_pbf);
+        }
+#else
+        UINT16_TO_STREAM (p, p_ccb->p_lcb->handle | (L2CAP_PKT_START << L2CAP_PKT_TYPE_SHIFT));
+#endif
 
         /* The HCI transport will segment the buffers. */
         if (p_buf->len > btu_cb.hcit_acl_data_size)
@@ -3277,7 +3299,7 @@ void l2cu_check_channel_congestion (tL2C_CCB *p_ccb)
                 p_ccb->cong_sent = TRUE;
                 if (p_ccb->p_rcb->api.pL2CA_CongestionStatus_Cb)
                 {
-                    L2CAP_TRACE_DEBUG3 ("L2CAP - Calling CongestionStatus_Cb (TRUE),CID:0x%04x,XmitQ:%u,Quota:%u",
+                    L2CAP_TRACE_WARNING3 ("L2CAP - Calling CongestionStatus_Cb (TRUE),CID:0x%04x,XmitQ:%u,Quota:%u",
                         p_ccb->local_cid, q_count, p_ccb->buff_quota);
 
                     (*p_ccb->p_rcb->api.pL2CA_CongestionStatus_Cb)(p_ccb->local_cid, TRUE);

@@ -329,7 +329,7 @@ tBTM_STATUS btm_read_power_mode_state (BD_ADDR remote_bda, tBTM_PM_STATE *pmStat
     if( (acl_ind = btm_pm_find_acl_ind(remote_bda)) == MAX_L2CAP_LINKS)
         return (BTM_UNKNOWN_ADDR);
 
-    *pmState= btm_cb.pm_mode_db[acl_ind].state;
+    *pmState = btm_cb.pm_mode_db[acl_ind].state;
     return BTM_SUCCESS;
 }
 

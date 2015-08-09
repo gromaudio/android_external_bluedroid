@@ -845,6 +845,85 @@ int PORT_FlowControl (UINT16 handle, BOOLEAN enable)
     }
     return (PORT_SUCCESS);
 }
+/*******************************************************************************
+**
+** Function         PORT_FlowControl_MaxCredit
+**
+** Description      This function directs a specified connection to pass
+**                  flow control message to the peer device.  Enable flag passed
+**                  shows if port can accept more data. It also sends max credit
+**                  when data flow enabled
+**
+** Parameters:      handle     - Handle returned in the RFCOMM_CreateConnection
+**                  enable     - enables data flow
+**
+*******************************************************************************/
+
+int PORT_FlowControl_MaxCredit (UINT16 handle, BOOLEAN enable)
+{
+    tPORT      *p_port;
+    BOOLEAN    old_fc;
+    UINT32     events;
+
+    RFCOMM_TRACE_API2 ("PORT_FlowControl() handle:%d enable: %d", handle, enable);
+
+    /* Check if handle is valid to avoid crashing */
+    if ((handle == 0) || (handle > MAX_RFC_PORTS))
+    {
+        return (PORT_BAD_HANDLE);
+    }
+
+    p_port = &rfc_cb.port.port[handle - 1];
+
+    if (!p_port->in_use || (p_port->state == PORT_STATE_CLOSED))
+    {
+        return (PORT_NOT_OPENED);
+    }
+
+    if (!p_port->rfc.p_mcb)
+    {
+        return (PORT_NOT_OPENED);
+    }
+
+    p_port->rx.user_fc = !enable;
+
+    if (p_port->rfc.p_mcb->flow == PORT_FC_CREDIT)
+    {
+        if (!p_port->rx.user_fc)
+        {
+            port_flow_control_peer(p_port, TRUE, p_port->credit_rx);
+        }
+    }
+    else
+    {
+        old_fc = p_port->local_ctrl.fc;
+
+        /* FC is set if user is set or peer is set */
+        p_port->local_ctrl.fc = (p_port->rx.user_fc | p_port->rx.peer_fc);
+
+        if (p_port->local_ctrl.fc != old_fc)
+            port_start_control (p_port);
+    }
+
+    /* Need to take care of the case when we could not deliver events */
+    /* to the application because we were flow controlled */
+    if (enable && (p_port->rx.queue_size != 0))
+    {
+        events = PORT_EV_RXCHAR;
+        if (p_port->rx_flag_ev_pending)
+        {
+            p_port->rx_flag_ev_pending = FALSE;
+            events |= PORT_EV_RXFLAG;
+        }
+
+        events &= p_port->ev_mask;
+        if (p_port->p_callback && events)
+        {
+            p_port->p_callback (events, p_port->inx);
+        }
+    }
+    return (PORT_SUCCESS);
+}
 
 
 /*******************************************************************************
@@ -1482,7 +1561,12 @@ int PORT_WriteDataCO (UINT16 handle, int* p_len)
         /* if we're over buffer high water mark, we're done */
         if ((p_port->tx.queue_size  > PORT_TX_HIGH_WM)
          || (p_port->tx.queue.count > PORT_TX_BUF_HIGH_WM))
+        {
+            event |= PORT_EV_TXFULL;
+            RFCOMM_TRACE_DEBUG2("PORT_WriteDataCO(): Tx Queue is FULL size= %d, count= %d",
+                p_port->tx.queue_size, p_port->tx.queue.count);
             break;
+	}
 
         /* continue with rfcomm data write */
         p_buf = (BT_HDR *)GKI_getpoolbuf (RFCOMM_DATA_POOL_ID);
@@ -1510,7 +1594,7 @@ int PORT_WriteDataCO (UINT16 handle, int* p_len)
 
 
         RFCOMM_TRACE_EVENT1 ("PORT_WriteData %d bytes", length);
-
+        event &= ~PORT_EV_TXFULL;
         rc = port_write (p_port, p_buf);
 
         /* If queue went below the threashold need to send flow control */

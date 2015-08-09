@@ -36,7 +36,7 @@
 #include "l2c_int.h"
 #include "btm_api.h"
 #include "btm_int.h"
-
+#include "bt_target.h"
 // btla-specific ++
 #define LOG_TAG "BTLD"
 #if (defined(ANDROID_APP_INCLUDED) && (ANDROID_APP_INCLUDED == TRUE) && (!defined(LINUX_NATIVE)) )
@@ -428,6 +428,10 @@ void btu_hcif_process_event (UINT8 controller_id, BT_HDR *p_msg)
                 btm_vendor_specific_evt (p, hci_evt_len);
             break;
     }
+#if HCI_RAW_CMD_INCLUDED == TRUE
+    btm_hci_event (p, hci_evt_code , hci_evt_len);
+#endif
+
     // reset the  num_hci_cmds_timed_out upon receving any event from controller.
     num_hci_cmds_timed_out = 0;
 }
@@ -1657,8 +1661,8 @@ void btu_hcif_cmd_timeout (UINT8 controller_id)
     {
         BT_TRACE_1(TRACE_LAYER_HCI, TRACE_TYPE_ERROR,
                   "Num consecutive HCI Cmd tout =%d Restarting BT process",num_hci_cmds_timed_out);
-
-        usleep(10000); /* 10 milliseconds */
+        bte_ssr_cleanup();
+        usleep(20000); /* 20 milliseconds */
         /* Killing the process to force a restart as part of fault tolerance */
         kill(getpid(), SIGKILL);
     }
@@ -1693,6 +1697,14 @@ static void btu_hcif_hardware_error_evt (UINT8 *p, UINT16 evt_len)
     /* Reset the controller */
     if (BTM_IsDeviceUp())
         BTM_DeviceReset (NULL);
+    if(*p == 0x0f)
+     {
+       BT_TRACE_0 (TRACE_LAYER_HCI, TRACE_TYPE_ERROR, "Ctlr H/w error event - code:Tigger SSR");
+       bte_ssr_cleanup();
+       usleep(20000); /* 20 milliseconds */
+        /* Killing the process to force a restart as part of fault tolerance */
+       kill(getpid(), SIGKILL);
+     }
 }
 
 
@@ -2241,12 +2253,15 @@ static void btu_hcif_enhanced_flush_complete_evt (UINT8 *p, UINT16 evt_len)
 static void btu_hcif_encyption_key_refresh_cmpl_evt (UINT8 *p, UINT16 evt_len)
 {
     UINT8   status;
+    UINT8   enc_enable = 0;
     UINT16  handle;
 
     STREAM_TO_UINT8  (status, p);
     STREAM_TO_UINT16 (handle, p);
 
-    btm_sec_encrypt_change (handle, status, 1);
+    if (status == HCI_SUCCESS) enc_enable = 1;
+
+    btm_sec_encrypt_change (handle, status, enc_enable);
 }
 
 static void btu_ble_process_adv_pkt (UINT8 *p, UINT16 evt_len)
@@ -2263,10 +2278,9 @@ static void btu_ble_ll_conn_complete_evt ( UINT8 *p, UINT16 evt_len)
 
 static void btu_ble_ll_conn_param_upd_evt (UINT8 *p, UINT16 evt_len)
 {
-/* This is empty until an upper layer cares about returning event */
-    //LE connection update has completed successfully as a master.
-    //We can enable the update request if the result is a success
-    //extract the HCI handle first
+    /* LE connection update has completed successfully as a master. */
+    /* We can enable the update request if the result is a success. */
+    /* extract the HCI handle first */
     UINT8   status;
     UINT16  handle;
     BT_TRACE_0(TRACE_LAYER_HCI, TRACE_TYPE_EVENT, "btu_ble_ll_conn_param_upd_evt");

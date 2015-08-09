@@ -301,9 +301,10 @@ static tBTA_JV_STATUS bta_jv_free_rfc_cb(tBTA_JV_RFC_CB *p_cb, tBTA_JV_PCB *p_pc
         status = BTA_JV_FAILURE;
         return status;
     case BTA_JV_ST_CL_OPEN:
+    case BTA_JV_ST_CL_OPENING:
+        APPL_TRACE_DEBUG3("bta_jv_free_sr_rfc_cb: state: %d, scn:%d,"
+                          " user_data:%d", p_pcb->state, p_cb->scn, (int)p_pcb->user_data);
         p_pcb->state = BTA_JV_ST_CL_CLOSING;
-        APPL_TRACE_DEBUG2("bta_jv_free_sr_rfc_cb: state: BTA_JV_ST_CL_OPEN, scn:%d,"
-                " user_data:%d", p_cb->scn, (int)p_pcb->user_data);
         break;
     case BTA_JV_ST_SR_LISTEN:
         p_pcb->state = BTA_JV_ST_SR_CLOSING;
@@ -469,7 +470,7 @@ static tBTA_JV_STATUS bta_jv_free_set_pm_profile_cb(UINT32 jv_handle)
                 "appid_counter = %d", bd_counter, appid_counter);
         if(bd_counter > 1)
            bta_jv_pm_conn_idle(&bta_jv_cb.pm_cb[i]);
-        if(bd_counter <= 1 || (appid_counter <= 1))
+        if(bd_counter <= 1 || (appid_counter <=1))
            bta_jv_clear_pm_cb(&bta_jv_cb.pm_cb[i], TRUE);
         else
         {
@@ -1961,8 +1962,9 @@ static int bta_jv_port_data_co_cback(UINT16 port_handle, UINT8 *buf, UINT16 len,
         switch(type)
         {
             case DATA_CO_CALLBACK_TYPE_INCOMING:
-                if(BTA_JV_PM_IDLE_ST == p_pcb->p_pm_cb->state)
-                    bta_jv_pm_conn_busy(p_pcb->p_pm_cb);
+                APPL_TRACE_DEBUG1("bta_jv_port_data_co_cback, p_pcb->p_pm_cb: %p",
+                        p_pcb->p_pm_cb);
+                bta_jv_pm_conn_busy(p_pcb->p_pm_cb);
                 ret = bta_co_rfc_data_incoming(p_pcb->user_data, (BT_HDR*)buf);
                 bta_jv_pm_conn_idle(p_pcb->p_pm_cb);
                 return ret;
@@ -2060,7 +2062,7 @@ static void bta_jv_port_event_cl_cback(UINT32 code, UINT16 port_handle)
         p_cb->p_cback(BTA_JV_RFCOMM_DATA_IND_EVT, &evt_data, p_pcb->user_data);
     }
 
-    if (code & PORT_EV_FC)
+    if ((code & PORT_EV_FC) || (code & PORT_EV_TXFULL))
     {
         p_pcb->cong = (code & PORT_EV_FCS) ? FALSE : TRUE;
         evt_data.rfc_cong.cong = p_pcb->cong;

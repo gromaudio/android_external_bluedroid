@@ -228,9 +228,18 @@ void gatt_notify_enc_cmpl(BD_ADDR bd_addr)
     tGATT_TCB   *p_tcb;
     tGATT_PENDING_ENC_CLCB  *p_buf;
     UINT16       count;
+    UINT8        i = 0;
 
     if ((p_tcb = gatt_find_tcb_by_addr(bd_addr)) != NULL)
     {
+        for (i = 0; i < GATT_MAX_APPS; i++)
+        {
+            if (gatt_cb.cl_rcb[i].in_use && gatt_cb.cl_rcb[i].app_cb.p_enc_cmpl_cb)
+            {
+                (*gatt_cb.cl_rcb[i].app_cb.p_enc_cmpl_cb)(gatt_cb.cl_rcb[i].gatt_if, bd_addr);
+            }
+        }
+
         if (gatt_get_sec_act(p_tcb) == GATT_SEC_ENC_PENDING)
         {
             gatt_set_sec_act(p_tcb, GATT_SEC_NONE);
@@ -316,7 +325,7 @@ tGATT_SEC_ACTION gatt_determine_sec_act(tGATT_CLCB *p_clcb )
     if (auth_req == GATT_AUTH_REQ_NONE )
         return act;
 
-    is_le_link = btm_ble_check_link_type(p_tcb->peer_bda);
+    is_le_link = BTM_UseLeLink(p_tcb->peer_bda);
     BTM_GetSecurityFlags(p_tcb->peer_bda, &sec_flag);
     btm_ble_link_sec_check(p_tcb->peer_bda, auth_req, &sec_act);
 

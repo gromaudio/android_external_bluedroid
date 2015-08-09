@@ -12,7 +12,13 @@ LOCAL_SRC_FILES := \
         src/utils.c
 
 ifeq ($(QCOM_BT_USE_SMD_TTY),true)
+
 LOCAL_CFLAGS += -DQCOM_WCN_SSR
+
+endif
+
+ifeq ($(TARGET_BUILD_VARIANT), eng)
+  LOCAL_CFLAGS += -DBTSNOOP_EXT_PARSER_INCLUDED=TRUE
 endif
 
 ifeq ($(BLUETOOTH_HCI_USE_USB),true)

@@ -132,9 +132,11 @@ typedef struct
 
     tBTM_BLE_LOCAL_ADV_DATA   adv_data;
     tBTM_BLE_ADV_CHNL_MAP     adv_chnl_map;
+    tBTM_BLE_ADV_DATA         adv_data_input; /* input by the user to be used to create the tBTM_BLE_LOCAL_ADV_DATA*/
 
     TIMER_LIST_ENT   inq_timer_ent;
     BOOLEAN          scan_rsp;
+    UINT16           scanResp_mask;
     UINT8            state;             /* Current state that the inquiry process is in */
     INT8             tx_power;
 } tBTM_BLE_INQ_CB;
@@ -190,12 +192,22 @@ typedef UINT8 tBTM_BLE_WL_STATE;
 #define BLE_CONN_IDLE    0
 #define BLE_DIR_CONN     1
 #define BLE_BG_CONN      2
+#define BLE_CONN_CANCEL  3
 typedef UINT8 tBTM_BLE_CONN_ST;
 
 typedef struct
 {
     void    *p_param;
 }tBTM_BLE_CONN_REQ;
+
+
+typedef struct
+{
+    BOOLEAN     in_use;
+    BOOLEAN     to_add;
+    BD_ADDR     bd_addr;
+    UINT8       attr;
+}tBTM_BLE_WL_OP;
 /* Define BLE Device Management control structure
 */
 typedef struct
@@ -215,6 +227,8 @@ typedef struct
     /* white list information */
     UINT8                   num_empty_filter;      /* Number of entries in white list */
     UINT8                   max_filter_entries;    /* Maximum number of entries that can be stored */
+    UINT8                   num_empty_filter_AD;   /* Number of entries in AD-based white list*/
+    UINT8                   max_filter_entries_AD; /* Maximum number of entries for AD-based white list that can be stored*/
     tBTM_BLE_WL_STATE       wl_state;
     UINT8                   bg_dev_num;
     tBTM_LE_BG_CONN_DEV     bg_dev_list[BTM_BLE_MAX_BG_CONN_DEV_NUM];
@@ -226,12 +240,13 @@ typedef struct
     tBTM_LE_RANDOM_CB   addr_mgnt_cb;
 
     BOOLEAN          enabled;
+    tBTM_BLE_WL_OP  wl_op_q[BTM_BLE_MAX_BG_CONN_DEV_NUM];
 
 #ifdef BTM_BLE_PC_ADV_TEST_MODE
     tBTM_BLE_SCAN_REQ_CBACK *p_scan_req_cback;
 #endif
+    tBTM_BLE_ADV_ENABLE_CBACK *p_adv_enable_cback;
 
-    BOOLEAN         scatternet_enable;
 } tBTM_BLE_CB;
 
 #ifdef __cplusplus
@@ -269,6 +284,8 @@ extern tBTM_STATUS btm_ble_set_encryption (BD_ADDR bd_addr, void *p_ref_data, UI
 extern void btm_ble_ltk_request(UINT16 handle, UINT8 rand[8], UINT16 ediv);
 extern BOOLEAN btm_ble_start_encrypt(BD_ADDR bda, BOOLEAN use_stk, BT_OCTET16 stk);
 extern void btm_ble_link_encrypted(BD_ADDR bd_addr, UINT8 encr_enable);
+extern void btm_ble_encryption_failure(BD_ADDR bd_addr,UINT8 status);
+
 #endif
 
 /* LE device management functions */
@@ -277,7 +294,6 @@ extern void btm_ble_reset_id( void );
 /* security related functions */
 extern void btm_ble_increment_sign_ctr(BD_ADDR bd_addr, BOOLEAN is_local );
 extern BOOLEAN btm_get_local_div (BD_ADDR bd_addr, UINT16 *p_div);
-extern BOOLEAN btm_ble_check_link_type (BD_ADDR bd_addr);
 extern BOOLEAN btm_ble_get_enc_key_type(BD_ADDR bd_addr, UINT8 *p_key_types);
 
 extern void btm_ble_rand_enc_complete (UINT8 *p, UINT16 op_code, tBTM_RAND_ENC_CB *p_enc_cplt_cback);

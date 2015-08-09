@@ -245,7 +245,6 @@ void avdt_scb_hdl_pkt_no_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
     UINT16  ex_len;
     UINT8   pad_len = 0;
 
-    AVDT_TRACE_DEBUG0("Enter avdt_scb_hdl_pkt_no_frag");
     p = p_start = (UINT8 *)(p_data->p_pkt + 1) + p_data->p_pkt->offset;
 
     /* parse media packet header */
@@ -290,9 +289,9 @@ void avdt_scb_hdl_pkt_no_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
 
         if (p_scb->cs.p_data_cback != NULL)
         {
-            AVDT_TRACE_DEBUG0("p_scb->cs.p_data_cback != NULL");
             /* report sequence number */
             p_data->p_pkt->layer_specific = seq;
+            APPL_TRACE_LATENCY_AUDIO1("AVDTP Recv Packet, seq number %d", seq);
             (*p_scb->cs.p_data_cback)(avdt_scb_to_hdl(p_scb), p_data->p_pkt,
                 time_stamp, (UINT8)(m_pt | (marker<<7)));
         }
@@ -303,7 +302,6 @@ void avdt_scb_hdl_pkt_no_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
              && (p_scb->p_media_buf != NULL)
              && (p_scb->media_buf_len > p_data->p_pkt->len))
             {
-                AVDT_TRACE_DEBUG0("p_scb->cs.p_media_cback != NULL");
                 /* media buffer enough length is assigned by application. Lets use it*/
                 memcpy(p_scb->p_media_buf,(UINT8*)(p_data->p_pkt + 1) + p_data->p_pkt->offset,
                     p_data->p_pkt->len);
@@ -424,7 +422,6 @@ void avdt_scb_hdl_pkt_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
     UINT32  payload_len; /* payload length */
     UINT16  frag_len; /* fragment length */
 
-    AVDT_TRACE_DEBUG0("Enter avdt_scb_hdl_pkt_frag");
     p = (UINT8 *)(p_data->p_pkt + 1) + p_data->p_pkt->offset;
     p_end = p + p_data->p_pkt->len;
     /* parse all fragments */
@@ -611,7 +608,6 @@ void avdt_scb_hdl_pkt_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
             /* send total media packet up */
             if (p_scb->cs.p_media_cback != NULL)
             {
-                AVDT_TRACE_DEBUG0("p_scb->cs.p_media_cback != NULL");
                 (*p_scb->cs.p_media_cback)(avdt_scb_to_hdl(p_scb), p_payload,
                                            payload_len, time_stamp, seq, m_pt, marker);
             }
@@ -674,7 +670,7 @@ void avdt_scb_hdl_pkt(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
 void avdt_scb_drop_pkt(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
 {
     GKI_freebuf(p_data->p_pkt);
-    AVDT_TRACE_WARNING0("Dropped incoming media packet");
+    AVDT_TRACE_ERROR0(" avdt_scb_drop_pkt Dropped incoming media packet");
 }
 
 /*******************************************************************************
@@ -822,7 +818,7 @@ void avdt_scb_hdl_setconfig_cmd(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
             p_scb->peer_seid = p_data->msg.config_cmd.int_seid;
             memcpy(&p_scb->req_cfg, p_cfg, sizeof(tAVDT_CFG));
             /* call app callback */
-            (*p_scb->cs.p_ctrl_cback)(avdt_scb_to_hdl(p_scb),
+            (*p_scb->cs.p_ctrl_cback)(avdt_scb_to_hdl(p_scb), /* handle of scb- which is same as sep handle of bta_av_cb.p_scb*/
                                       p_scb->p_ccb ? p_scb->p_ccb->peer_addr : NULL,
                                       AVDT_CONFIG_IND_EVT,
                                       (tAVDT_CTRL *) &p_data->msg.config_cmd);

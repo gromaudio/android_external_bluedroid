@@ -553,6 +553,9 @@ static bt_status_t connect_int( bt_bdaddr_t *bd_addr )
 static bt_status_t connect( bt_bdaddr_t *bd_addr )
 {
     CHECK_BTHF_INIT();
+
+    btif_queue_remove_connect(UUID_SERVCLASS_AG_HANDSFREE, BTIF_QUEUE_CHECK_CONNECT_REQ);
+
    if(btif_hf_cb.handle)
        return btif_queue_connect(UUID_SERVCLASS_AG_HANDSFREE, bd_addr, connect_int, BTIF_QUEUE_CONNECT_EVT);
     else
@@ -980,10 +983,10 @@ static bt_status_t phone_state_change(int num_active, int num_held, bthf_call_st
     ** force the SCO to be setup. Handle this special case here prior to
     ** call setup handling
     */
-    if ( (num_active == 1) && (btif_hf_cb.num_active == 0) && (btif_hf_cb.num_held == 0) &&
+    if ( ((num_active + num_held) > 0) && (btif_hf_cb.num_active == 0) && (btif_hf_cb.num_held == 0) &&
          (btif_hf_cb.call_setup_state == BTHF_CALL_STATE_IDLE) )
     {
-        BTIF_TRACE_DEBUG1("%s: Active call notification received without call setup update",
+        BTIF_TRACE_DEBUG1("%s: Active/Held call notification received without call setup update",
                           __FUNCTION__);
 
         memset(&ag_res, 0, sizeof(tBTA_AG_RES_DATA));
@@ -1123,6 +1126,51 @@ update_call_states:
 
 /*******************************************************************************
 **
+** Function         get_remote_features
+**
+** Description      get remote features
+**
+** Returns         int
+**
+*******************************************************************************/
+static int get_remote_features()
+{
+    CHECK_BTHF_INIT();
+
+    return btif_hf_cb.peer_feat;
+}
+
+/*******************************************************************************
+**
+** Function         btif_hf_is_connected
+**
+** Description      Checks if hf is connected
+**
+** Returns          BOOLEAN
+**
+*******************************************************************************/
+BOOLEAN btif_hf_is_connected(void)
+{
+    return is_connected(NULL);
+}
+
+/*******************************************************************************
+**
+** Function         btif_hf_close_update
+**
+** Description      close audio and update to application layer
+**
+** Returns          boolean
+**
+*******************************************************************************/
+void btif_hf_close_update(void)
+{
+   btif_hf_cb.state = BTHF_CONNECTION_STATE_DISCONNECTED;
+   HAL_CBACK(bt_hf_callbacks, connection_state_cb, btif_hf_cb.state, &btif_hf_cb.connected_bda);
+}
+
+/*******************************************************************************
+**
 ** Function         btif_hf_is_call_idle
 **
 ** Description      returns true if no call is in progress
@@ -1209,6 +1257,7 @@ static const bthf_interface_t bthfInterface = {
     at_response,
     clcc_response,
     phone_state_change,
+    get_remote_features,
     cleanup,
 };
 

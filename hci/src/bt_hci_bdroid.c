@@ -268,8 +268,10 @@ static int init(const bt_hc_callbacks_t* p_cb, unsigned char *local_bdaddr)
     if(pthread_getschedparam(hc_cb.worker_thread, &policy, &param)==0)
     {
         policy = BTHC_LINUX_BASE_POLICY;
-#if (BTHC_LINUX_BASE_POLICY!=SCHED_NORMAL)
+#if (BTHC_LINUX_BASE_POLICY != SCHED_NORMAL)
         param.sched_priority = BTHC_MAIN_THREAD_PRIORITY;
+#else
+        param.sched_priority = 0;
 #endif
         result = pthread_setschedparam(hc_cb.worker_thread, policy, &param);
         if (result != 0)
@@ -386,6 +388,14 @@ static int logging(bt_hc_logging_state_t state, char *p_path)
     return BT_HC_STATUS_SUCCESS;
 }
 
+#if (BLUETOOTH_QCOM_SW == TRUE)
+static void ssr_cleanup (void) {
+    BTHCDBG("ssr_cleanup");
+    /* Calling vendor-specific part */
+    if (bt_vnd_if)
+        bt_vnd_if->ssr_cleanup();
+}
+#endif
 
 /** Closes the interface */
 static void cleanup( void )
@@ -440,6 +450,9 @@ static const bt_hc_interface_t bluetoothHCLibInterface = {
     set_rxflow,
     logging,
     cleanup
+#if (BLUETOOTH_QCOM_SW == TRUE)
+    ,ssr_cleanup
+#endif
 };
 
 

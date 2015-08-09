@@ -1,5 +1,7 @@
 /******************************************************************************
  *
+ *  Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ *  Not a Contribution.
  *  Copyright (C) 2003-2012 Broadcom Corporation
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -46,7 +48,8 @@
 #define BTA_BUSY                3
 #define BTA_NO_RESOURCES        4
 #define BTA_WRONG_MODE          5
-
+#define BTA_BAD_RF              6
+#define BTA_TIMEOUT             7
 typedef UINT8 tBTA_STATUS;
 
 /*
@@ -86,19 +89,20 @@ typedef UINT8 tBTA_STATUS;
 #define BTA_MN_SERVICE_ID       26          /* Message Notification Service */
 #define BTA_HDP_SERVICE_ID      27          /* Health Device Profile */
 #define BTA_PCE_SERVICE_ID      28          /* PhoneBook Access Client*/
+#define BTA_HIDD_SERVICE_ID     29          /* HID Device */
 
 #if BLE_INCLUDED == TRUE && BTA_GATT_INCLUDED == TRUE
 /* BLE profile service ID */
-#define BTA_BLE_SERVICE_ID      29          /* GATT profile */
+#define BTA_BLE_SERVICE_ID      30          /* GATT profile */
 
 // btla-specific ++
-#define BTA_USER_SERVICE_ID     30          /* User requested UUID */
+#define BTA_USER_SERVICE_ID     31          /* User requested UUID */
 
-#define BTA_MAX_SERVICE_ID      31
+#define BTA_MAX_SERVICE_ID      32
 // btla-specific --
 #else
-#define BTA_USER_SERVICE_ID     29          /* User requested UUID */
-#define BTA_MAX_SERVICE_ID      30
+#define BTA_USER_SERVICE_ID     30          /* User requested UUID */
+#define BTA_MAX_SERVICE_ID      31
 #endif
 /* service IDs (BTM_SEC_SERVICE_FIRST_EMPTY + 1) to (BTM_SEC_MAX_SERVICES - 1)
  * are used by BTA JV */
@@ -137,22 +141,23 @@ typedef UINT8 tBTA_SERVICE_ID;
 #define BTA_MN_SERVICE_MASK         0x04000000  /* Message Notification Profile */
 #define BTA_HL_SERVICE_MASK         0x08000000  /* Health Device Profile */
 #define BTA_PCE_SERVICE_MASK        0x10000000  /* Phone Book Client */
+#define BTA_HIDD_SERVICE_MASK       0x20000000  /* HID Device */
 
 #if BLE_INCLUDED == TRUE && BTA_GATT_INCLUDED == TRUE
-#define BTA_BLE_SERVICE_MASK        0x20000000  /* GATT based service */
+#define BTA_BLE_SERVICE_MASK        0x40000000  /* GATT based service */
 // btla-specific ++
-#define BTA_USER_SERVICE_MASK       0x40000000  /* Message Notification Profile */
+#define BTA_USER_SERVICE_MASK       0x80000000  /* Message Notification Profile */
 // btla-specific --
 #else
 // btla-specific ++
-#define BTA_USER_SERVICE_MASK       0x20000000  /* Message Notification Profile */
+#define BTA_USER_SERVICE_MASK       0x40000000  /* Message Notification Profile */
 // btla-specific --
 #endif
 
 #if BLE_INCLUDED == TRUE && BTA_GATT_INCLUDED == TRUE
-#define BTA_ALL_SERVICE_MASK        0x3FFFFFFF  /* All services supported by BTA. */
+#define BTA_ALL_SERVICE_MASK        0x7FFFFFFF  /* All services supported by BTA. */
 #else
-#define BTA_ALL_SERVICE_MASK        0x1FFFFFFF  /* All services supported by BTA. */
+#define BTA_ALL_SERVICE_MASK        0x3FFFFFFF  /* All services supported by BTA. */
 #endif
 
 typedef UINT32 tBTA_SERVICE_MASK;
@@ -177,6 +182,7 @@ typedef UINT16 tBTA_SEC;
 
 #define BTA_DM_IGNORE           0xFF
 
+#define BTA_ALL_APP_ID          0xFF
 
 /* Discoverable Modes */
 #define BTA_DM_NON_DISC         BTM_NON_DISCOVERABLE        /* Device is not discoverable. */
@@ -210,7 +216,7 @@ typedef UINT16 tBTA_DM_CONN;
 #define BTA_DM_CONN_PAIRED      1
 
 /* Inquiry Modes */
-#define BTA_DM_INQUIRY_NONE		BTM_INQUIRY_NONE            /*No BR inquiry. */
+#define BTA_DM_INQUIRY_NONE     BTM_INQUIRY_NONE            /*No BR inquiry. */
 #define BTA_DM_GENERAL_INQUIRY  BTM_GENERAL_INQUIRY         /* Perform general inquiry. */
 #define BTA_DM_LIMITED_INQUIRY  BTM_LIMITED_INQUIRY         /* Perform limited inquiry. */
 
@@ -282,7 +288,7 @@ typedef struct
     BOOLEAN             report_dup;     /* report duplicated inquiry response with higher RSSI value */
     tBTA_DM_INQ_FILT    filter_type;    /* Filter condition type. */
     tBTA_DM_INQ_COND    filter_cond;    /* Filter condition data. */
-#ifdef BLUETOOTH_QCOM_LE_INTL_SCAN
+#if (defined(BTA_HOST_INTERLEAVE_SEARCH) && BTA_HOST_INTERLEAVE_SEARCH == TRUE)
     UINT8               intl_duration[4];/*duration array storing the interleave scan's time portions*/
 #endif
 } tBTA_DM_INQ;
@@ -322,7 +328,7 @@ typedef struct
 #define BTA_BLE_AD_BIT_INT_RANGE       BTM_BLE_AD_BIT_INT_RANGE
 #define BTA_BLE_AD_BIT_SERVICE         BTM_BLE_AD_BIT_SERVICE
 #define BTA_BLE_AD_BIT_APPEARANCE      BTM_BLE_AD_BIT_APPEARANCE
-#define BTA_BLE_AD_BIT_PROPRIETARY     BTM_BLE_AD_BIT_PROPRIETARY
+#define BTA_BLE_AD_BIT_VS_DATA         BTM_BLE_AD_BIT_VS_DATA
 #define BTA_DM_BLE_AD_BIT_SERVICE_SOL     BTM_BLE_AD_BIT_SERVICE_SOL
 #define BTA_DM_BLE_AD_BIT_SERVICE_DATA    BTM_BLE_AD_BIT_SERVICE_DATA
 #define BTA_DM_BLE_AD_BIT_SIGN_DATA       BTM_BLE_AD_BIT_SIGN_DATA
@@ -362,21 +368,22 @@ typedef struct
     UINT8       *p_val;     /* number of len byte */
 }tBTA_BLE_PROP_ELEM;
 
-/* vendor proprietary adv type */
+/* vendor data  adv type */
 typedef struct
 {
     UINT8                   num_elem;
     tBTA_BLE_PROP_ELEM      *p_elem;
-}tBTA_BLE_PROPRIETARY;
+}tBTA_BLE_VS_DATA;
 
 typedef struct
 {
-    tBTA_BLE_MANU			manu;			/* manufactuer data */
-    tBTA_BLE_INT_RANGE		int_range;      /* slave prefered conn interval range */
-    tBTA_BLE_SERVICE		services;       /* services */
-	UINT16					appearance;		/* appearance data */
-    UINT8					flag;
-    tBTA_BLE_PROPRIETARY    *p_proprietary;
+    tBTA_BLE_MANU           service_data;    /* service data */
+    tBTA_BLE_MANU           manu;            /* manufactuer data */
+    tBTA_BLE_INT_RANGE      int_range;       /* slave prefered conn interval range */
+    tBTA_BLE_SERVICE        services;        /* services */
+    UINT16                  appearance;      /* appearance data */
+    UINT8                   flag;
+    tBTA_BLE_VS_DATA    *vs_data;
 
 }tBTA_BLE_ADV_DATA;
 
@@ -402,10 +409,10 @@ typedef struct
 #define BTA_BLE_RSSI_ALERT_LO        2
 typedef UINT8 tBTA_DM_BLE_RSSI_ALERT_TYPE;
 
-#define BTA_BLE_RSSI_ALERT_NONE		    BTM_BLE_RSSI_ALERT_NONE		/*	(0) */
-#define BTA_BLE_RSSI_ALERT_HI_BIT		BTM_BLE_RSSI_ALERT_HI_BIT		/*	(1) */
-#define BTA_BLE_RSSI_ALERT_RANGE_BIT	BTM_BLE_RSSI_ALERT_RANGE_BIT	/*	(1 << 1) */
-#define BTA_BLE_RSSI_ALERT_LO_BIT		BTM_BLE_RSSI_ALERT_LO_BIT		/*	(1 << 2) */
+#define BTA_BLE_RSSI_ALERT_NONE         BTM_BLE_RSSI_ALERT_NONE       /* (0) */
+#define BTA_BLE_RSSI_ALERT_HI_BIT       BTM_BLE_RSSI_ALERT_HI_BIT     /* (1) */
+#define BTA_BLE_RSSI_ALERT_RANGE_BIT    BTM_BLE_RSSI_ALERT_RANGE_BIT  /* (1 << 1) */
+#define BTA_BLE_RSSI_ALERT_LO_BIT       BTM_BLE_RSSI_ALERT_LO_BIT     /* (1 << 2) */
 typedef UINT8     tBTA_DM_BLE_RSSI_ALERT_MASK;
 
 
@@ -509,6 +516,8 @@ typedef UINT8 tBTA_SIG_STRENGTH_MASK;
 // btla-specific --
 #define BTA_DM_DEV_UNPAIRED_EVT         23
 #define BTA_DM_HW_ERROR_EVT             24      /* BT Chip H/W error */
+#define BTA_DM_BLE_ADV_ENABLE_EVT       25      /*BLE adv enable/diable callback event*/
+#define BTA_DM_REM_NAME_EVT             26      /* Remote name event */
 typedef UINT8 tBTA_DM_SEC_EVT;
 
 /* Structure associated with BTA_DM_ENABLE_EVT */
@@ -690,6 +699,13 @@ typedef struct
     UINT8           level_flags; /* indicates individual flags */
 } tBTA_DM_BUSY_LEVEL;
 
+/* Structure associated with BTA_DM_REM_NAME_EVT */
+typedef struct
+{
+    BD_ADDR         bd_addr;            /* BD address peer device. */
+    BD_NAME         bd_name;            /* Name of peer device. */
+} tBTA_DM_REM_NAME_EVT;
+
 #define BTA_IO_CAP_OUT      BTM_IO_CAP_OUT      /* DisplayOnly */
 #define BTA_IO_CAP_IO       BTM_IO_CAP_IO       /* DisplayYesNo */
 #define BTA_IO_CAP_IN       BTM_IO_CAP_IN       /* KeyboardOnly */
@@ -783,6 +799,14 @@ typedef struct
     tBTA_STATUS     result;    /* TRUE of bond cancel succeeded, FALSE if failed. */
 } tBTA_DM_BOND_CANCEL_CMPL;
 
+/*structure associated with adv enable*/
+typedef struct
+{
+    UINT8          advEnable;          /*adv enable/disable 1/0 */
+    UINT8          advType;             /*HCI command result*/
+    UINT8          isLimited;           /*Limited or General discoverability*/
+} tBTA_DM_ADV_ENABLE_CMPL;
+
 /* Union of all security callback structures */
 typedef union
 {
@@ -793,6 +817,7 @@ typedef union
     tBTA_DM_LINK_UP     link_up;       /* ACL connection down event */
     tBTA_DM_LINK_DOWN   link_down;       /* ACL connection down event */
     tBTA_DM_SIG_STRENGTH sig_strength;  /* rssi and link quality value */
+    tBTA_DM_REM_NAME_EVT rem_name_evt; /* remote name event */
     tBTA_DM_BUSY_LEVEL  busy_level;     /* System busy level */
     tBTA_DM_SP_CFM_REQ  cfm_req;        /* user confirm request */
     tBTA_DM_SP_KEY_NOTIF key_notif;     /* passkey notification */
@@ -804,6 +829,7 @@ typedef union
     tBTA_DM_BLE_KEY      ble_key;        /* BLE SMP keys used when pairing */
     tBTA_BLE_LOCAL_ID_KEYS  ble_id_keys;  /* IR event */
     BT_OCTET16              ble_er;       /* ER event data */
+    tBTA_DM_ADV_ENABLE_CMPL adv_enable;   /*adv enable / disable*/
 } tBTA_DM_SEC;
 
 /* Security callback */
@@ -1115,6 +1141,83 @@ BTA_API extern void BTA_DmSetDeviceName(char *p_name);
 **
 *******************************************************************************/
 BTA_API extern void BTA_DmSetVisibility(tBTA_DM_DISC disc_mode, tBTA_DM_CONN conn_mode, UINT8 pairable_mode, UINT8 conn_filter);
+
+/*******************************************************************************
+**
+** Function         BTA_DmSetBLEVisibility
+**
+** Description      This function sets the Bluetooth LE connectable,discoverable modes
+                     of local device
+**                  This controls whether other Bluetooth devices can find and connect to
+**                  the local device.
+**
+**
+** Returns          void
+**
+*******************************************************************************/
+BTA_API extern void BTA_DmSetBLEVisibility(tBTA_DM_DISC disc_mode, tBTA_DM_CONN conn_mode,  BOOLEAN is_directed);
+
+
+/*******************************************************************************
+**
+** Function         BTA_DmSetBLEAdvMask
+**
+** Description      This function set the LE adv data mask
+**
+**
+** Returns          void
+**
+*******************************************************************************/
+BTA_API extern void BTA_DmSetBLEAdvMask(UINT16 datamask);
+
+/*******************************************************************************
+**
+** Function         BTA_DmSetBLEAdvMask
+**
+** Description      This function set the LE adv data mask
+**
+**
+** Returns          void
+**
+*******************************************************************************/
+BTA_API extern void BTA_DmSetBLEScanRespMask(UINT16 datamask);
+
+/*******************************************************************************
+**
+** Function         BTA_DmSetAdvParams
+**
+** Description      This function sets the Bluetooth LE adv params
+**
+**
+** Returns          void
+**
+*******************************************************************************/
+
+BTA_API extern void BTA_DmSetAdvParams(UINT16 adv_int_min, UINT16 adv_int_max, BD_ADDR bd_addr ,tBLE_ADDR_TYPE addr_type);
+
+/*******************************************************************************
+**
+** Function         BTA_DmSetManuData
+**
+** Description      This function sets the manufacturer specific data
+**                       for adv data and scan resp data
+**
+** Returns          void
+**
+*******************************************************************************/
+BTA_API extern void BTA_DmSetManuData(UINT8 *p_buff, UINT8 len);
+
+/*******************************************************************************
+**
+** Function         BTA_DmSetServiceData
+**
+** Description      This function sets the service data
+**                       for adv data and scan resp data
+**
+** Returns          void
+**
+*******************************************************************************/
+BTA_API extern void BTA_DmSetServiceData(UINT8 *p_buff, UINT8 len);
 
 /*******************************************************************************
 **
@@ -1557,7 +1660,7 @@ BTA_API extern BOOLEAN BTA_DmUseSsr( BD_ADDR bd_addr );
 **
 *******************************************************************************/
 BTA_API extern tBTA_STATUS BTA_DmSetLocalDiRecord( tBTA_DI_RECORD *p_device_info,
-	                          UINT32 *p_handle );
+                              UINT32 *p_handle );
 
 /*******************************************************************************
 **
@@ -1571,7 +1674,7 @@ BTA_API extern tBTA_STATUS BTA_DmSetLocalDiRecord( tBTA_DI_RECORD *p_device_info
 **
 *******************************************************************************/
 BTA_API extern tBTA_STATUS BTA_DmGetLocalDiRecord( tBTA_DI_GET_RECORD *p_device_info,
-	                          UINT32 *p_handle );
+                          UINT32 *p_handle );
 
 /*******************************************************************************
 **
@@ -1801,6 +1904,23 @@ BTA_API extern void BTA_DmSetBleConnScanParams(UINT16 scan_interval,
 
 /*******************************************************************************
 **
+** Function         BTA_DmSetBleAdvParams
+**
+** Description      This function sets the advertising parameters BLE functionality.
+**                  It is to be called when device act in peripheral or broadcaster
+**                  role.
+**
+** Parameters:      adv_int_min    - adv interval minimum
+**                  adv_int_max    - adv interval max
+**                  p_dir_bda      - directed adv initator address
+**
+** Returns          void
+**
+*******************************************************************************/
+BTA_API extern void BTA_DmSetBleAdvParams (UINT16 adv_int_min, UINT16 adv_int_max,
+                                           tBLE_BD_ADDR *p_dir_bda);
+/*******************************************************************************
+**
 ** Function         BTA_DmSearchExt
 **
 ** Description      This function searches for peer Bluetooth devices. It performs
@@ -1884,6 +2004,8 @@ BTA_API extern void BTA_DmBleObserve(BOOLEAN start, UINT8 duration,
                                            tBTA_DM_SEARCH_CBACK *p_results_cb);
 
 
+BTA_API extern void BTA_DmBleObserve_With_Filter(BOOLEAN start, UINT8 duration, tBTA_DM_BLE_SCAN_FILTER filters[],
+                                                   int entries, UINT8 scan_policy, tBTA_DM_SEARCH_CBACK *p_results_cb);
 #endif
 
 // btla-specific ++
@@ -1898,7 +2020,7 @@ BTA_API extern void BTA_DmBleObserve(BOOLEAN start, UINT8 duration,
 *******************************************************************************/
 BTA_API extern void BTA_DmSetAfhChannelAssessment (BOOLEAN enable_or_disable);
 
-#if BLE_INCLUDE == TRUE
+#if BLE_INCLUDED == TRUE
 // btla-specific --
 /*******************************************************************************
 **
@@ -1941,6 +2063,34 @@ BTA_API extern void BTA_DmBleEnableRemotePrivacy(BD_ADDR bd_addr, BOOLEAN privac
 *******************************************************************************/
 BTA_API extern void BTA_DmBleSetAdvConfig (tBTA_BLE_AD_MASK data_mask,
                                            tBTA_BLE_ADV_DATA *p_adv_cfg);
+
+/*******************************************************************************
+**
+** Function         BTA_DmBleSetScanRsp
+**
+** Description      This function is called to override the BTA scan response.
+**
+** Parameters       Pointer to User defined ADV data structure
+**
+** Returns          None
+**
+*******************************************************************************/
+BTA_API extern void BTA_DmBleSetScanRsp (tBTA_BLE_AD_MASK data_mask,
+                                         tBTA_BLE_ADV_DATA *p_adv_cfg);
+
+/*******************************************************************************
+**
+** Function         BTA_DmBleBroadcast
+**
+** Description      This function starts or stops LE broadcasting.
+**
+** Parameters       start: start or stop broadcast.
+**
+** Returns          None
+**
+*******************************************************************************/
+BTA_API extern void BTA_DmBleBroadcast (BOOLEAN start);
+
 #endif
 
 #ifdef __cplusplus

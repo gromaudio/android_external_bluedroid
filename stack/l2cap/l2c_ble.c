@@ -48,7 +48,6 @@ BOOLEAN L2CA_CancelBleConnectReq (BD_ADDR rem_bda)
     tL2C_LCB *p_lcb;
 
     /* There can be only one BLE connection request outstanding at a time */
-    //changed check for BLE_CONN_IDLE instead of incorrect BLE_DIR_CONN for no pending connection
     if (btm_ble_get_conn_st() == BLE_CONN_IDLE)
     {
         L2CAP_TRACE_WARNING0 ("L2CA_CancelBleConnectReq - no connection pending");
@@ -73,8 +72,8 @@ BOOLEAN L2CA_CancelBleConnectReq (BD_ADDR rem_bda)
             p_lcb->disc_reason = L2CAP_CONN_CANCEL;
             l2cu_release_lcb (p_lcb);
         }
-        /* update conn state to IDLE */
-        btm_ble_set_conn_st (BLE_CONN_IDLE);
+        /* update state to be cancel, wait for connection cancel complete */
+        btm_ble_set_conn_st (BLE_CONN_CANCEL);
 
         return(TRUE);
     }
@@ -82,6 +81,56 @@ BOOLEAN L2CA_CancelBleConnectReq (BD_ADDR rem_bda)
         return(FALSE);
 }
 
+/*******************************************************************************
+**
+**  Function        L2CA_InternalBleConnUpdate
+**
+**  Description     update BLE connection based on status
+**
+**  Parameters:     lcb
+**
+**  Return value:   none
+**
+*******************************************************************************/
+static void L2CA_InternalBleConnUpdate (tL2C_LCB *p_lcb)
+{
+    if (p_lcb->upd_status & L2C_BLE_UPDATE_PENDING) return;
+
+    if (p_lcb->upd_status & L2C_BLE_CONN_UPDATE_DISABLE)
+    {
+        /* application requests to disable parameters update.
+           If parameters are already updated, lets set them
+           up to what has been requested during connection establishement */
+        if (p_lcb->upd_status & L2C_BLE_NOT_DEFAULT_PARAM)
+        {
+            tBTM_SEC_DEV_REC *p_dev_rec = btm_find_or_alloc_dev(p_lcb->remote_bd_addr);
+
+            btsnd_hcic_ble_upd_ll_conn_params(p_lcb->handle,
+                (UINT16)((p_dev_rec->conn_params.min_conn_int != BTM_BLE_CONN_PARAM_UNDEF) ?
+                         p_dev_rec->conn_params.min_conn_int : BTM_BLE_CONN_INT_MIN_DEF),
+                (UINT16)((p_dev_rec->conn_params.max_conn_int != BTM_BLE_CONN_PARAM_UNDEF) ?
+                         p_dev_rec->conn_params.max_conn_int : BTM_BLE_CONN_INT_MAX_DEF),
+                (UINT16)((p_dev_rec->conn_params.slave_latency != BTM_BLE_CONN_PARAM_UNDEF) ?
+                         p_dev_rec->conn_params.slave_latency : BTM_BLE_CONN_SLAVE_LATENCY_DEF),
+                (UINT16)((p_dev_rec->conn_params.supervision_tout != BTM_BLE_CONN_PARAM_UNDEF) ?
+                         p_dev_rec->conn_params.supervision_tout : BTM_BLE_CONN_TIMEOUT_DEF),
+                0, 0);
+            p_lcb->upd_status &= ~L2C_BLE_NOT_DEFAULT_PARAM;
+            p_lcb->upd_status |= (L2C_BLE_UPDATE_PENDING | L2C_BLE_NEW_CONN_PARAM);
+        }
+    }
+    else
+    {
+        /* application allows to do update, if we were delaying one do it now */
+        if (p_lcb->upd_status & L2C_BLE_NEW_CONN_PARAM)
+        {
+            btsnd_hcic_ble_upd_ll_conn_params(p_lcb->handle, p_lcb->min_interval,
+                p_lcb->max_interval, p_lcb->latency, p_lcb->timeout, 0, 0);
+            p_lcb->upd_status &= ~L2C_BLE_NEW_CONN_PARAM;
+            p_lcb->upd_status |= (L2C_BLE_UPDATE_PENDING | L2C_BLE_NOT_DEFAULT_PARAM);
+        }
+    }
+}
 
 /*******************************************************************************
 **
@@ -117,7 +166,14 @@ BOOLEAN L2CA_UpdateBleConnParams (BD_ADDR rem_bda, UINT16 min_int, UINT16 max_in
     }
 
     if (p_lcb->link_role == HCI_ROLE_MASTER)
-        btsnd_hcic_ble_upd_ll_conn_params (p_lcb->handle, min_int, max_int, latency, timeout, 0, 0);
+    {
+        p_lcb->min_interval = min_int;
+        p_lcb->max_interval = max_int;
+        p_lcb->latency = latency;
+        p_lcb->timeout = timeout;
+        p_lcb->upd_status |= L2C_BLE_NEW_CONN_PARAM;
+        L2CA_InternalBleConnUpdate(p_lcb);
+    }
     else
         l2cu_send_peer_ble_par_req (p_lcb, min_int, max_int, latency, timeout);
 
@@ -151,8 +207,9 @@ BOOLEAN L2CA_EnableUpdateBleConnParams (BD_ADDR rem_bda, BOOLEAN enable)
         return (FALSE);
     }
 
-    L2CAP_TRACE_API4 ("L2CA_EnableUpdateBleConnParams - BD_ADDR %08x%04x enable %d current upd state %d",
-        (rem_bda[0]<<24)+(rem_bda[1]<<16)+(rem_bda[2]<<8)+rem_bda[3], (rem_bda[4]<<8)+rem_bda[5], enable, p_lcb->upd_disabled);
+    L2CAP_TRACE_API4 ("L2CA_EnableUpdateBleConnParams - BD_ADDR %08x%04x enable %d upd state %d",
+        (rem_bda[0]<<24)+(rem_bda[1]<<16)+(rem_bda[2]<<8)+rem_bda[3], (rem_bda[4]<<8)+rem_bda[5],
+        enable, p_lcb->upd_status);
 
     if (!p_lcb->is_ble_link || (p_lcb->link_role != HCI_ROLE_MASTER))
     {
@@ -163,36 +220,14 @@ BOOLEAN L2CA_EnableUpdateBleConnParams (BD_ADDR rem_bda, BOOLEAN enable)
 
     if (enable)
     {
-        /* application allows to do update, if we were delaying one do it now, otherwise
-        just mark lcb that updates are enabled */
-        if (p_lcb->upd_disabled == UPD_PENDING)
-        {
-            btsnd_hcic_ble_upd_ll_conn_params (p_lcb->handle, p_lcb->min_interval, p_lcb->max_interval,
-                                               p_lcb->latency, p_lcb->timeout, 0, 0);
-            p_lcb->upd_disabled = UPD_UPDATED;
-        }
-        else
-        {
-            p_lcb->upd_disabled = UPD_ENABLED;
-        }
+        p_lcb->upd_status &= ~L2C_BLE_CONN_UPDATE_DISABLE;
     }
     else
     {
-        /* application requests to disable parameters update.  If parameters are already updated, lets set them
-        up to what has been requested during connection establishement */
-        if (p_lcb->upd_disabled == UPD_UPDATED)
-        {
-            tBTM_SEC_DEV_REC    *p_dev_rec = btm_find_or_alloc_dev (rem_bda);
-
-            btsnd_hcic_ble_upd_ll_conn_params (p_lcb->handle,
-                (UINT16)((p_dev_rec->conn_params.min_conn_int != BTM_BLE_CONN_PARAM_UNDEF) ? p_dev_rec->conn_params.min_conn_int : BTM_BLE_CONN_INT_MIN_DEF),
-                (UINT16)((p_dev_rec->conn_params.max_conn_int != BTM_BLE_CONN_PARAM_UNDEF) ? p_dev_rec->conn_params.max_conn_int : BTM_BLE_CONN_INT_MAX_DEF),
-                (UINT16)((p_dev_rec->conn_params.slave_latency != BTM_BLE_CONN_PARAM_UNDEF) ? p_dev_rec->conn_params.slave_latency : BTM_BLE_CONN_SLAVE_LATENCY_DEF),
-                (UINT16) ((p_dev_rec->conn_params.supervision_tout != BTM_BLE_CONN_PARAM_UNDEF) ? p_dev_rec->conn_params.supervision_tout : BTM_BLE_CONN_TIMEOUT_DEF),
-                0, 0);
-        }
-        p_lcb->upd_disabled = UPD_DISABLED;
+        p_lcb->upd_status |= L2C_BLE_CONN_UPDATE_DISABLE;
     }
+
+    L2CA_InternalBleConnUpdate(p_lcb);
 
     return (TRUE);
 }
@@ -210,28 +245,28 @@ BOOLEAN L2CA_EnableUpdateBleConnParams (BD_ADDR rem_bda, BOOLEAN enable)
 void L2CA_HandleConnUpdateEvent (UINT16 handle, UINT8 status)
 {
     tL2C_LCB *p_lcb;
-    BD_ADDR rem_bda;
 
     L2CAP_TRACE_DEBUG0("L2CA_HandleConnUpdateEvent");
-    if(status!=HCI_SUCCESS)//no action to be taken
-    {
-        L2CAP_TRACE_WARNING1("L2CA_EnableUpdateBleConnParams: connection update complete event recvd without success, status: %d", status);
-        return;
-    }
 
     /* See if we have a link control block for the remote device */
     p_lcb = l2cu_find_lcb_by_handle(handle);
-    if(!p_lcb)
+    if (!p_lcb)
     {
         L2CAP_TRACE_WARNING1("L2CA_EnableUpdateBleConnParams: Invalid handle: %d", handle);
         return;
     }
-    memcpy(rem_bda, p_lcb->remote_bd_addr, BD_ADDR_LEN);
-    L2CAP_TRACE_DEBUG1("L2CA_HandleConnUpdateEvent: upd_disabled=%d",p_lcb->upd_disabled);
-    if(p_lcb->upd_disabled == UPD_UPDATED)
-        L2CA_EnableUpdateBleConnParams (rem_bda, TRUE);
-}
 
+    p_lcb->upd_status &= ~L2C_BLE_UPDATE_PENDING;
+
+    if (status != HCI_SUCCESS)
+    {
+        L2CAP_TRACE_WARNING1("L2CA_EnableUpdateBleConnParams: Error status: %d", status);
+    }
+
+    L2CA_InternalBleConnUpdate(p_lcb);
+
+    L2CAP_TRACE_DEBUG1("L2CA_HandleConnUpdateEvent: upd_status=%d", p_lcb->upd_status);
+}
 
 /*******************************************************************************
 **
@@ -334,6 +369,7 @@ void l2cble_scanner_conn_comp (UINT16 handle, BD_ADDR bda, tBLE_ADDR_TYPE type,
     p_lcb->link_role  = HCI_ROLE_MASTER;
     p_lcb->is_ble_link = TRUE;
 
+#if (!defined(BTA_BLE_SKIP_CONN_UPD) || BTA_BLE_SKIP_CONN_UPD == FALSE)
     /* If there are any preferred connection parameters, set them now */
     if ( (p_dev_rec->conn_params.min_conn_int     >= BTM_BLE_CONN_INT_MIN ) &&
          (p_dev_rec->conn_params.min_conn_int     <= BTM_BLE_CONN_INT_MAX ) &&
@@ -358,8 +394,9 @@ void l2cble_scanner_conn_comp (UINT16 handle, BD_ADDR bda, tBLE_ADDR_TYPE type,
                                            p_dev_rec->conn_params.slave_latency,
                                            p_dev_rec->conn_params.supervision_tout,
                                            0, 0);
+        p_lcb->upd_status |= L2C_BLE_UPDATE_PENDING;
     }
-
+#endif
     /* Tell BTM Acl management about the link */
     btm_acl_created (bda, NULL, p_dev_rec->sec_bd_name, handle, p_lcb->link_role, TRUE);
 
@@ -524,18 +561,8 @@ void l2cble_process_sig_cmd (tL2C_LCB *p_lcb, UINT8 *p, UINT16 pkt_len)
                     p_lcb->max_interval = max_interval;
                     p_lcb->latency = latency;
                     p_lcb->timeout = timeout;
-
-                    if (p_lcb->upd_disabled == UPD_ENABLED)
-                    {
-                        btsnd_hcic_ble_upd_ll_conn_params (p_lcb->handle, min_interval, max_interval,
-                                                            latency, timeout, 0, 0);
-                        p_lcb->upd_disabled = UPD_UPDATED;
-                    }
-                    else
-                    {
-                        L2CAP_TRACE_EVENT0 ("L2CAP - LE - update currently disabled");
-                        p_lcb->upd_disabled = UPD_PENDING;
-                    }
+                    p_lcb->upd_status |= L2C_BLE_NEW_CONN_PARAM;
+                    L2CA_InternalBleConnUpdate(p_lcb);
                 }
             }
             else
@@ -588,13 +615,17 @@ BOOLEAN l2cble_init_direct_conn (tL2C_LCB *p_lcb)
     if (!btsnd_hcic_ble_create_ll_conn (scan_int,/* UINT16 scan_int      */
                                         scan_win, /* UINT16 scan_win      */
                                         FALSE,                   /* UINT8 white_list     */
-                                        p_lcb->ble_addr_type,          /* UINT8 addr_type_peer */
-                                        p_lcb->remote_bd_addr,         /* BD_ADDR bda_peer     */
-                                        BLE_ADDR_PUBLIC,         /* UINT8 addr_type_own  */
-                                        (UINT16) ((p_dev_rec->conn_params.min_conn_int != BTM_BLE_CONN_PARAM_UNDEF) ? p_dev_rec->conn_params.min_conn_int : BTM_BLE_CONN_INT_MIN),  /* UINT16 conn_int_min  */
-                                        (UINT16) ((p_dev_rec->conn_params.max_conn_int != BTM_BLE_CONN_PARAM_UNDEF) ? p_dev_rec->conn_params.max_conn_int : BTM_BLE_CONN_INT_MIN),  /* UINT16 conn_int_max  */
-                                        (UINT16) ((p_dev_rec->conn_params.slave_latency != BTM_BLE_CONN_PARAM_UNDEF) ? p_dev_rec->conn_params.slave_latency : 0), /* UINT16 conn_latency  */
-                                        (UINT16) ((p_dev_rec->conn_params.supervision_tout != BTM_BLE_CONN_PARAM_UNDEF) ? p_dev_rec->conn_params.supervision_tout : BTM_BLE_CONN_SUP_TOUT_DEF), /* UINT16 conn_timeout  */
+                                        init_addr_type,          /* UINT8 addr_type_peer */
+                                        init_addr,               /* BD_ADDR bda_peer     */
+                                        own_addr_type,         /* UINT8 addr_type_own  */
+        (UINT16) ((p_dev_rec->conn_params.min_conn_int != BTM_BLE_CONN_PARAM_UNDEF) ?
+        p_dev_rec->conn_params.min_conn_int : BTM_BLE_CONN_INT_MIN_DEF),  /* conn_int_min  */
+        (UINT16) ((p_dev_rec->conn_params.max_conn_int != BTM_BLE_CONN_PARAM_UNDEF) ?
+        p_dev_rec->conn_params.max_conn_int : BTM_BLE_CONN_INT_MAX_DEF),  /* conn_int_max  */
+        (UINT16) ((p_dev_rec->conn_params.slave_latency != BTM_BLE_CONN_PARAM_UNDEF) ?
+        p_dev_rec->conn_params.slave_latency : BTM_BLE_CONN_SLAVE_LATENCY_DEF), /* UINT16 conn_latency  */
+        (UINT16) ((p_dev_rec->conn_params.supervision_tout != BTM_BLE_CONN_PARAM_UNDEF) ?
+        p_dev_rec->conn_params.supervision_tout : BTM_BLE_CONN_TIMEOUT_DEF), /* conn_timeout */
                                         0,                       /* UINT16 min_len       */
                                         0))                      /* UINT16 max_len       */
     {
@@ -605,9 +636,8 @@ BOOLEAN l2cble_init_direct_conn (tL2C_LCB *p_lcb)
     else
     {
         p_lcb->link_state = LST_CONNECTING;
+        l2cb.is_ble_connecting = TRUE;
         memcpy (l2cb.ble_connecting_bda, p_lcb->remote_bd_addr, BD_ADDR_LEN);
-        //Assigning below variable which is checked at LE conn cancel
-        l2cb.is_ble_connecting=TRUE;
         btu_start_timer (&p_lcb->timer_entry, BTU_TTYPE_L2CAP_LINK, L2CAP_BLE_LINK_CONNECT_TOUT);
         btm_ble_set_conn_st (BLE_DIR_CONN);
 

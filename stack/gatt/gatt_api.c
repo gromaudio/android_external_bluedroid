@@ -121,6 +121,32 @@ BOOLEAN  GATTS_NVRegister (tGATT_APPL_INFO *p_cb_info)
     return status;
 }
 
+BOOLEAN GATTS_RetrieveServiceList(UINT16 **p_l,UINT16* count)
+{
+    tGATT_HDL_LIST_INFO *p_list_info = &gatt_cb.hdl_list_info;
+    int servCount = p_list_info->count;
+    tGATT_HDL_LIST_ELEM     *p_temp = NULL;
+    int xx = 0;
+
+    UINT16 *p_srvList = (UINT16*) malloc (sizeof(UINT16) * servCount);
+    memset(p_srvList, 0, sizeof(UINT16) * servCount);
+
+    GATT_TRACE_API1("NA Service Count ?: %d", servCount);
+    *p_l= p_list_info->p_first->asgn_range.svc_uuid.uu.uuid16;
+    p_temp=p_list_info->p_first;
+
+    while(p_temp && xx < servCount)
+    {
+        p_srvList[xx++] = p_temp->asgn_range.svc_uuid.uu.uuid16;
+        GATT_TRACE_API1("in the loop, found uuid: 0x%0x", p_srvList[xx - 1]);
+        p_temp = p_temp->p_next;
+    }
+    *count = xx;
+    *p_l = p_srvList;
+    return TRUE;
+}
+
+
 /*******************************************************************************
 **
 ** Function         GATTS_CreateService
@@ -1293,6 +1319,11 @@ void GATT_Deregister (tGATT_IF gatt_if)
     }
 
     gatt_deregister_bgdev_list(gatt_if);
+    /* update the listen mode */
+#ifdef BLE_PERIPHERAL_MODE_SUPPORT
+    GATT_Listen(gatt_if, FALSE, NULL);
+#endif
+
     memset (p_reg, 0, sizeof(tGATT_REG));
 }
 
@@ -1534,7 +1565,7 @@ BOOLEAN GATT_GetConnectionInfor(UINT16 conn_id, tGATT_IF *p_gatt_if, BD_ADDR bd_
 **                   bd_addr: peer device address. (input)
 **                   p_conn_id: connection id  (output)
 **
-** Returns          TRUE the ligical link is connected
+** Returns          TRUE the logical link is connected
 **
 *******************************************************************************/
 BOOLEAN GATT_GetConnIdIfConnected(tGATT_IF gatt_if, BD_ADDR bd_addr, UINT16 *p_conn_id)
@@ -1564,7 +1595,7 @@ BOOLEAN GATT_GetConnIdIfConnected(tGATT_IF gatt_if, BD_ADDR bd_addr, UINT16 *p_c
 ** Parameters       gatt_if: applicaiton interface
 **                  p_bd_addr: listen for specific address connection, or NULL for
 **                             listen to all device connection.
-**                  start: is a direct conenection or a background auto connection
+**                  start: start or stop listening.
 **
 ** Returns          TRUE if advertisement is started; FALSE if adv start failure.
 **

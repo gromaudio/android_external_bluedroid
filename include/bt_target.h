@@ -58,12 +58,7 @@
 #include "dyn_mem.h"    /* defines static and/or dynamic memory for components */
 
 
-//------------------Added from Bluedroid buildcfg.h---------------------
-/* This feature is used to update any QCOM related changes in the stack*/
-#ifndef BLUETOOTH_QCOM_SW
-#define BLUETOOTH_QCOM_SW FALSE
-#endif
-
+//------------------Added from bdroid_buildcfg.h---------------------
 #ifndef I2SPCM_SLAVE_BRCM
 #define I2SPCM_SLAVE_BRCM FALSE
 #endif
@@ -82,6 +77,15 @@
 
 #ifndef L2CAP_EXTFEA_SUPPORTED_MASK
 #define L2CAP_EXTFEA_SUPPORTED_MASK (L2CAP_EXTFEA_ENH_RETRANS | L2CAP_EXTFEA_STREAM_MODE | L2CAP_EXTFEA_NO_CRC | L2CAP_EXTFEA_FIXED_CHNLS)
+#endif
+
+/* This feature is used to update any QCOM related changes in the stack*/
+#ifndef BLUETOOTH_QCOM_SW
+#define BLUETOOTH_QCOM_SW FALSE
+#endif
+
+#ifndef BTA_BLE_SKIP_CONN_UPD
+#define BTA_BLE_SKIP_CONN_UPD FALSE
 #endif
 
 #ifndef BTUI_OPS_FORMATS
@@ -190,7 +194,7 @@
 #endif
 
 #ifndef BTA_HD_INCLUDED
-#define BTA_HD_INCLUDED FALSE
+#define BTA_HD_INCLUDED TRUE
 #endif
 
 #ifndef BTA_HH_INCLUDED
@@ -199,6 +203,10 @@
 
 #ifndef BTA_HH_ROLE
 #define BTA_HH_ROLE BTA_MASTER_ROLE_PREF
+#endif
+
+#ifndef BTA_HH_LE_INCLUDED
+#define BTA_HH_LE_INCLUDED TRUE
 #endif
 
 #ifndef BTA_AR_INCLUDED
@@ -213,9 +221,7 @@
 #define BTA_AV_VDP_INCLUDED FALSE
 #endif
 
-#ifndef BTA_AVK_INCLUDED
-#define BTA_AVK_INCLUDED FALSE
-#endif
+/* defined BTA_AVK_INCLUDED in Android.mk file based on target selected*/
 
 #ifndef BTA_PBS_INCLUDED
 #define BTA_PBS_INCLUDED FALSE
@@ -357,8 +363,22 @@
 #define BTA_AV_CO_CP_SCMS_T  FALSE
 #endif
 
+#ifndef BTA_AV_DISCONNECT_IF_NO_SCMS_T
+#define BTA_AV_DISCONNECT_IF_NO_SCMS_T  FALSE
+#endif
+
 #ifndef AVDT_CONNECT_CP_ONLY
 #define AVDT_CONNECT_CP_ONLY  FALSE
+#endif
+
+/* This feature is used to eanble interleaved scan*/
+#ifndef BTA_HOST_INTERLEAVE_SEARCH
+#define BTA_HOST_INTERLEAVE_SEARCH FALSE
+#endif
+
+/* This feature is used to skip query of ble read remote features*/
+#ifndef BTA_SKIP_BLE_READ_REMOTE_FEAT
+#define BTA_SKIP_BLE_READ_REMOTE_FEAT FALSE
 #endif
 
 #ifndef BT_TRACE_PROTOCOL
@@ -371,6 +391,10 @@
 
 #ifndef BT_TRACE_BTIF
 #define BT_TRACE_BTIF  TRUE
+#endif
+
+#ifndef BT_TRACE_LATENCY_AUDIO
+#define BT_TRACE_LATENCY_AUDIO  TRUE
 #endif
 
 #ifndef BTTRC_INCLUDED
@@ -420,7 +444,8 @@
 #ifndef BTIF_DM_OOB_TEST
 #define BTIF_DM_OOB_TEST  TRUE
 #endif
-//------------------End added from Bluedroid buildcfg.h---------------------
+
+//------------------End added from bdroid_buildcfg.h---------------------
 
 
 
@@ -563,7 +588,7 @@
 /* Number of ACL buffers to assign to LE
    if the HCI buffer pool is shared with BR/EDR */
 #ifndef L2C_DEF_NUM_BLE_BUF_SHARED
-#define L2C_DEF_NUM_BLE_BUF_SHARED      1
+#define L2C_DEF_NUM_BLE_BUF_SHARED      2
 #endif
 
 /* Used by BTM when it sends HCI commands to the controller. */
@@ -748,6 +773,8 @@ BT_API extern void bte_main_hci_send (BT_HDR *p_msg, UINT16 event);
 BT_API extern void bte_main_lpm_allow_bt_device_sleep(void);
 #endif
 
+BT_API extern void bte_ssr_cleanup(void);
+
 #ifdef __cplusplus
 }
 #endif
@@ -858,15 +885,10 @@ and USER_HW_DISABLE_API macros */
 #if (BLUETOOTH_QCOM_SW == TRUE) /* Enable WBS only under this flag.*/
 #define BTM_WBS_INCLUDED            TRUE
 #define BTC_INCLUDED                TRUE
-#define BLUETOOTH_QCOM_LE_INTL_SCAN TRUE
 #else
 /* Includes WBS if TRUE */
 #ifndef BTM_WBS_INCLUDED
 #define BTM_WBS_INCLUDED            FALSE       /* TRUE includes WBS code */
-#endif
-/* This feature is used to eanble QCOM interleaved scan*/
-#ifndef BLUETOOTH_QCOM_LE_INTL_SCAN
-#define BLUETOOTH_QCOM_LE_INTL_SCAN FALSE
 #endif
 /* BTC */
 #ifndef BTC_INCLUDED
@@ -1078,12 +1100,9 @@ and USER_HW_DISABLE_API macros */
 #define BTM_MAX_LOC_BD_NAME_LEN     248
 #endif
 
-/* TRUE if default string is used, FALSE if device name is set in the application */
-#ifndef BTM_USE_DEF_LOCAL_NAME
-#define BTM_USE_DEF_LOCAL_NAME      TRUE
-#endif
-
-/* Fixed Default String (Ignored if BTM_USE_DEF_LOCAL_NAME is FALSE) */
+/* Fixed Default String. When this is defined as null string, the device's
+ * product model name is used as the default local name.
+ */
 #ifndef BTM_DEF_LOCAL_NAME
 #define BTM_DEF_LOCAL_NAME      ""
 #endif
@@ -1303,7 +1322,7 @@ and USER_HW_DISABLE_API macros */
 
 /* Whether link wants to be the master or the slave. */
 #ifndef L2CAP_DESIRED_LINK_ROLE
-#define L2CAP_DESIRED_LINK_ROLE     HCI_ROLE_SLAVE
+#define L2CAP_DESIRED_LINK_ROLE     HCI_ROLE_MASTER
 #endif
 
 /* Include Non-Flushable Packet Boundary Flag feature of Lisbon */
@@ -1414,6 +1433,10 @@ and USER_HW_DISABLE_API macros */
 #endif
 #endif
 
+#ifndef HCI_RAW_CMD_INCLUDED
+#define HCI_RAW_CMD_INCLUDED    TRUE
+#endif
+
 /******************************************************************************
 **
 ** BLE
@@ -1462,7 +1485,7 @@ and USER_HW_DISABLE_API macros */
 #endif
 
 #ifndef GATT_MAX_PHY_CHANNEL
-#define GATT_MAX_PHY_CHANNEL        4
+#define GATT_MAX_PHY_CHANNEL        7
 #endif
 
 /* Used for conformance testing ONLY */
@@ -1519,7 +1542,7 @@ and USER_HW_DISABLE_API macros */
 
 /* The maximum number of SDP records the server can support. */
 #ifndef SDP_MAX_RECORDS
-#define SDP_MAX_RECORDS             20
+#define SDP_MAX_RECORDS             25
 #endif
 
 /* The maximum number of attributes in each record. */
@@ -3513,6 +3536,23 @@ Range: Minimum 12000 (12 secs) when supporting PBF.
 #define AVRC_METADATA_INCLUDED      TRUE
 #endif
 
+#ifndef AVRC_ADV_CTRL_INCLUDED
+#define AVRC_ADV_CTRL_INCLUDED      TRUE
+#endif
+
+#ifndef SDP_AVRCP_1_5
+#define SDP_AVRCP_1_5               FALSE
+
+#if  SDP_AVRCP_1_5    == TRUE
+#ifndef AVCT_BROWSE_INCLUDED
+#define AVCT_BROWSE_INCLUDED        TRUE
+#else
+#ifndef AVCT_BROWSE_INCLUDED
+#define AVCT_BROWSE_INCLUDED        FALSE
+#endif
+#endif
+#endif
+#endif
 /******************************************************************************
 **
 ** MCAP
@@ -3750,6 +3790,11 @@ The maximum number of payload octets that the local device can receive in a sing
 #define APPL_INCLUDED                TRUE
 #endif
 
+/* TEST_APP_INTERFACE */
+#ifndef TEST_APP_INTERFACE
+#define TEST_APP_INTERFACE          TRUE
+#endif
+
 /* When TRUE remote terminal code included (RPC MUST be included) */
 #ifndef RSI_INCLUDED
 #define RSI_INCLUDED                TRUE
@@ -3790,6 +3835,9 @@ The maximum number of payload octets that the local device can receive in a sing
 #define BTA_AG_CIND_INFO "(\"call\",(0,1)),(\"callsetup\",(0-3)),(\"service\",(0-1)),(\"signal\",(0-5)),(\"roam\",(0,1)),(\"battchg\",(0-5)),(\"callheld\",(0-2))"
 #endif
 
+#ifndef BTA_DM_AVOID_A2DP_ROLESWITCH_ON_INQUIRY
+#define BTA_DM_AVOID_A2DP_ROLESWITCH_ON_INQUIRY TRUE
+#endif
 
 /******************************************************************************
 **

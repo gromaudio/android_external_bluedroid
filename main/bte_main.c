@@ -58,7 +58,7 @@
 
 /* Stack preload process maximum retry attempts  */
 #ifndef PRELOAD_MAX_RETRY_ATTEMPTS
-#define PRELOAD_MAX_RETRY_ATTEMPTS 0
+#define PRELOAD_MAX_RETRY_ATTEMPTS 2
 #endif
 
 /*******************************************************************************
@@ -76,8 +76,9 @@ typedef struct
 **  Variables
 ******************************************************************************/
 BOOLEAN hci_logging_enabled = FALSE;    /* by default, turn hci log off */
+BOOLEAN hci_logging_config = FALSE;    /* configured from bluetooth framework */
 char hci_logfile[256] = HCI_LOGGING_FILENAME;
-BOOLEAN hci_ssp_debug_enabled = FALSE; /* by default, turn ssp debug off */
+
 
 /*******************************************************************************
 **  Static variables
@@ -243,11 +244,43 @@ static void bte_send_preload_req(void)
      starting. So btu_task must be started before the firmware & transport is intialized.
      Otherwise btu_task might miss the event for preload result(success or failure). which
      could lead a failure while turning on bluetooth. */
+
+    preload_start_wait_timer();
+
     if (bt_hc_if)
     {
        bt_hc_if->preload(NULL);
     }
 }
+/******************************************************************************
+**
+** Function         bte_main_config_hci_logging
+**
+** Description      enable or disable HIC snoop logging
+**
+** Returns          None
+**
+******************************************************************************/
+void bte_main_config_hci_logging(BOOLEAN enable, BOOLEAN bt_disabled)
+{
+    int old = (hci_logging_enabled == TRUE) || (hci_logging_config == TRUE);
+    int new;
+
+    if (enable) {
+        hci_logging_config = TRUE;
+    } else {
+        hci_logging_config = FALSE;
+    }
+
+    new = (hci_logging_enabled == TRUE) || (hci_logging_config == TRUE);
+
+    if ((old == new) || bt_disabled || (bt_hc_if == NULL)) {
+        return;
+    }
+
+    bt_hc_if->logging(new ? BT_HC_LOGGING_ON : BT_HC_LOGGING_OFF, hci_logfile);
+}
+
 /******************************************************************************
 **
 ** Function         bte_hci_enable
@@ -261,7 +294,6 @@ static void bte_hci_enable(void)
 {
     APPL_TRACE_DEBUG1("%s", __FUNCTION__);
 
-    preload_start_wait_timer();
 
     if (bt_hc_if)
     {
@@ -270,7 +302,7 @@ static void bte_hci_enable(void)
 
         assert(result == BT_HC_STATUS_SUCCESS);
 
-        if (hci_logging_enabled == TRUE)
+        if (hci_logging_enabled == TRUE || hci_logging_config == TRUE)
             bt_hc_if->logging(BT_HC_LOGGING_ON, hci_logfile);
 
 #if (defined (BT_CLEAN_TURN_ON_DISABLED) && BT_CLEAN_TURN_ON_DISABLED == TRUE)
@@ -298,6 +330,27 @@ static void bte_hci_enable(void)
 
 /******************************************************************************
 **
+** Function         bte_ssr_cleanup
+**
+** Description      sends PWR_OFF to vendor library so that harware would be
+**                  turned off as part of hardware subsystem crash
+**
+** Returns          None
+**
+******************************************************************************/
+void bte_ssr_cleanup(void)
+{
+    APPL_TRACE_ERROR1("%s", __FUNCTION__);
+#if (BLUETOOTH_QCOM_SW == TRUE)
+    bt_hc_if->ssr_cleanup();
+#else
+    bt_hc_if->set_power(BT_HC_CHIP_PWR_OFF);
+#endif
+
+}
+
+/******************************************************************************
+**
 ** Function         bte_hci_disable
 **
 ** Description      Disable HCI & Vendor modules
@@ -313,7 +366,7 @@ static void bte_hci_disable(void)
     {
         bt_hc_if->cleanup();
         bt_hc_if->set_power(BT_HC_CHIP_PWR_OFF);
-        if (hci_logging_enabled == TRUE)
+        if (hci_logging_enabled == TRUE ||  hci_logging_config == TRUE)
             bt_hc_if->logging(BT_HC_LOGGING_OFF, hci_logfile);
     }
 }

@@ -97,13 +97,13 @@ tHID_STATUS hidh_conn_reg (void)
     /* Now, register with L2CAP */
     if (!L2CA_Register (HID_PSM_CONTROL, (tL2CAP_APPL_INFO *) &hst_reg_info))
     {
-        HIDH_TRACE_ERROR0 ("HID Control Registration failed");
+        HIDH_TRACE_ERROR0 ("HID-Host Control Registration failed");
         return (HID_ERR_L2CAP_FAILED) ;
     }
     if (!L2CA_Register (HID_PSM_INTERRUPT, (tL2CAP_APPL_INFO *) &hst_reg_info))
     {
         L2CA_Deregister( HID_PSM_CONTROL ) ;
-        HIDH_TRACE_ERROR0 ("HID Interrupt Registration failed");
+        HIDH_TRACE_ERROR0 ("HID-Host Interrupt Registration failed");
         return (HID_ERR_L2CAP_FAILED) ;
     }
 
@@ -129,18 +129,18 @@ tHID_STATUS hidh_conn_disconnect (UINT8 dhandle)
 {
     tHID_CONN *p_hcon = &hh_cb.devices[dhandle].conn;
 
-    HIDH_TRACE_EVENT0 ("HID - disconnect");
+    HIDH_TRACE_EVENT0 ("HID-Host disconnect");
 
     if ((p_hcon->ctrl_cid != 0) || (p_hcon->intr_cid != 0))
     {
         p_hcon->conn_state = HID_CONN_STATE_DISCONNECTING;
 
+        /* Set l2cap idle timeout to 0 (so ACL link is disconnected
+         * immediately after last channel is closed) */
+        L2CA_SetIdleTimeoutByBdAddr(hh_cb.devices[dhandle].addr, 0);
         /* Disconnect both interrupt and control channels */
         if (p_hcon->intr_cid)
             L2CA_DisconnectReq (p_hcon->intr_cid);
-
-        if (p_hcon->ctrl_cid)
-            L2CA_DisconnectReq (p_hcon->ctrl_cid);
     }
     else
     {
@@ -201,37 +201,25 @@ static void hidh_l2cif_connect_ind (BD_ADDR  bd_addr, UINT16 l2cap_cid, UINT16 p
 {
     tHID_CONN    *p_hcon;
     BOOLEAN      bAccept = TRUE;
-    int i;
+    UINT8        i = HID_HOST_MAX_DEVICES;
     tHID_HOST_DEV_CTB *p_dev;
 
-    HIDH_TRACE_EVENT2 ("HID - Rcvd L2CAP conn ind, PSM: 0x%04x  CID 0x%x", psm, l2cap_cid);
+    HIDH_TRACE_EVENT2 ("HID-Host Rcvd L2CAP conn ind, PSM: 0x%04x  CID 0x%x", psm, l2cap_cid);
 
-    for( i=0; i < HID_HOST_MAX_DEVICES; i++ )
+    /* always reject incoming connection from unpaired HID devices. */
+    if (!btm_sec_is_a_paired_dev(bd_addr) && psm == HID_PSM_CONTROL)
     {
-        if( hh_cb.devices[i].in_use && (!memcmp(bd_addr, hh_cb.devices[i].addr, sizeof(BD_ADDR))) )
-            break;
+        HIDH_TRACE_ERROR0 ("HID-Host Rcvd L2CAP conn ind from unpaired device, "
+            "sending security block");
+        L2CA_ConnectRsp (bd_addr, l2cap_id, l2cap_cid, L2CAP_CONN_SECURITY_BLOCK, 0);
+        return;
     }
 
-    if (i >= HID_HOST_MAX_DEVICES)
+    /* always add incoming connection device into HID database by default */
+    if (HID_HostAddDev(bd_addr, HID_ATTR_MASK_IGNORE, &i) != HID_SUCCESS)
     {
-        if (btm_sec_is_a_bonded_dev(bd_addr) && psm == HID_PSM_CONTROL &&
-            hh_cb.unknown_dev_sdp_in_prog == FALSE) {
-            L2CA_ConnectRsp (bd_addr, l2cap_id, l2cap_cid, L2CAP_CONN_PENDING, L2CAP_CONN_OK);
-            /* device is bonded, and we dont have device in hid database. This can exist
-             * when remote device has initaited pairing and is now trying to create hid control
-             * l2cap channel. Try to initiate sdp and add device in hid database.
-             */
-            hh_cb.incoming_conn_info = (tHID_HOST_INCMNG_CON_INFO *)GKI_getbuf(sizeof(tHID_HOST_INCMNG_CON_INFO));
-            memcpy(hh_cb.incoming_conn_info->bd_addr, bd_addr, BD_ADDR_LEN);
-            hh_cb.incoming_conn_info->l2cap_cid = l2cap_cid;
-            hh_cb.incoming_conn_info->l2cap_id = l2cap_id;
-            hh_cb.unknown_dev_sdp_in_prog = TRUE;
-            HIDH_TRACE_DEBUG0 ("hidh_l2cif_connect_ind: sending message to intiate SDP to this device");
-            hh_cb.callback( 0, HID_HDEV_EVT_PERFORM_SDP, 0, (BT_HDR *)bd_addr ) ;
-        }
-        else
-            /* Send Security Block */
-            L2CA_ConnectRsp (bd_addr, l2cap_id, l2cap_cid, L2CAP_CONN_SECURITY_BLOCK, 0);
+        HIDH_TRACE_ERROR0 ("HID-Host failed to add device, sending security block");
+        L2CA_ConnectRsp (bd_addr, l2cap_id, l2cap_cid, L2CAP_CONN_SECURITY_BLOCK, 0);
         return;
     }
 
@@ -243,12 +231,13 @@ static void hidh_l2cif_connect_ind (BD_ADDR  bd_addr, UINT16 l2cap_cid, UINT16 p
     {
         if (p_hcon->ctrl_cid == 0)
         {
-            HIDH_TRACE_WARNING0 ("HID - Rcvd INTR L2CAP conn ind, but no CTL channel");
+            HIDH_TRACE_WARNING0 ("HID-Host Rcvd INTR L2CAP conn ind, but no CTL channel");
             bAccept = FALSE;
         }
         if (p_hcon->conn_state != HID_CONN_STATE_CONNECTING_INTR)
         {
-            HIDH_TRACE_WARNING1 ("HID - Rcvd INTR L2CAP conn ind, wrong state: %d", p_hcon->conn_state);
+            HIDH_TRACE_WARNING1 ("HID-Host Rcvd INTR L2CAP conn ind, wrong state: %d",
+                                 p_hcon->conn_state);
             bAccept = FALSE;
         }
     }
@@ -260,7 +249,8 @@ static void hidh_l2cif_connect_ind (BD_ADDR  bd_addr, UINT16 l2cap_cid, UINT16 p
 #else
         if (p_hcon->conn_state != HID_CONN_STATE_UNUSED)
         {
-            HIDH_TRACE_WARNING1 ("HID - Rcvd CTL L2CAP conn ind, wrong state: %d", p_hcon->conn_state);
+            HIDH_TRACE_WARNING1 ("HID-Host - Rcvd CTL L2CAP conn ind, wrong state: %d",
+                                 p_hcon->conn_state);
             bAccept = FALSE;
         }
 #endif
@@ -301,7 +291,8 @@ static void hidh_l2cif_connect_ind (BD_ADDR  bd_addr, UINT16 l2cap_cid, UINT16 p
     /* Send a Configuration Request. */
     L2CA_ConfigReq (l2cap_cid, &hh_cb.l2cap_cfg);
 
-    HIDH_TRACE_EVENT2 ("HID - Rcvd L2CAP conn ind, sent config req, PSM: 0x%04x  CID 0x%x", psm, l2cap_cid);
+    HIDH_TRACE_EVENT2 ("HID-Host Rcvd L2CAP conn ind, sent config req, PSM: 0x%04x  CID 0x%x",
+                       psm, l2cap_cid);
 }
 
 /*******************************************************************************
@@ -317,7 +308,8 @@ void hidh_proc_repage_timeout (TIMER_LIST_ENT *p_tle)
 {
     hidh_conn_initiate( (UINT8) p_tle->param ) ;
     hh_cb.devices[p_tle->param].conn_tries++;
-    hh_cb.callback( (UINT8) p_tle->param, HID_HDEV_EVT_RETRYING, hh_cb.devices[p_tle->param].conn_tries, NULL ) ;
+    hh_cb.callback( (UINT8) p_tle->param, hh_cb.devices[p_tle->param].addr,
+                    HID_HDEV_EVT_RETRYING, hh_cb.devices[p_tle->param].conn_tries, NULL ) ;
 }
 
 /*******************************************************************************
@@ -342,13 +334,14 @@ void hidh_sec_check_complete_orig (BD_ADDR bd_addr, void *p_ref_data, UINT8 res)
     dhandle = ((UINT32)p_dev - (UINT32)&(hh_cb.devices[0]))/ sizeof(tHID_HOST_DEV_CTB);
     if( res == BTM_SUCCESS && p_dev->conn.conn_state == HID_CONN_STATE_SECURITY )
     {
-        HIDH_TRACE_EVENT0 ("HID - Originator security pass.");
+        HIDH_TRACE_EVENT0 ("HID-Host Originator security pass.");
         p_dev->conn.disc_reason = HID_SUCCESS;  /* Authentication passed. Reset disc_reason (from HID_ERR_AUTH_FAILED) */
 
         /* Transition to the next appropriate state, configuration */
         p_dev->conn.conn_state = HID_CONN_STATE_CONFIG;
         L2CA_ConfigReq (p_dev->conn.ctrl_cid, &hh_cb.l2cap_cfg);
-        HIDH_TRACE_EVENT1 ("HID - Got Control conn cnf, sent cfg req, CID: 0x%x", p_dev->conn.ctrl_cid);
+        HIDH_TRACE_EVENT1 ("HID-Host Got Control conn cnf, sent cfg req, CID: 0x%x", p_dev->conn.ctrl_cid);
+
     }
 
     if( res != BTM_SUCCESS && p_dev->conn.conn_state == HID_CONN_STATE_SECURITY )
@@ -399,9 +392,10 @@ static void hidh_l2cif_connect_cfm (UINT16 l2cap_cid, UINT16 result)
     if ((p_hcon == NULL)
      || (!(p_hcon->conn_flags & HID_CONN_FLAGS_IS_ORIG))
      || ((l2cap_cid == p_hcon->ctrl_cid) && (p_hcon->conn_state != HID_CONN_STATE_CONNECTING_CTRL))
-     || ((l2cap_cid == p_hcon->intr_cid) && (p_hcon->conn_state != HID_CONN_STATE_CONNECTING_INTR)))
+     || ((l2cap_cid == p_hcon->intr_cid) && (p_hcon->conn_state != HID_CONN_STATE_CONNECTING_INTR)
+     && (p_hcon->conn_state != HID_CONN_STATE_DISCONNECTING)))
     {
-        HIDH_TRACE_WARNING1 ("HID - Rcvd unexpected conn cnf, CID 0x%x ", l2cap_cid);
+        HIDH_TRACE_WARNING1 ("HID-Host Rcvd unexpected conn cnf, CID 0x%x ", l2cap_cid);
         return;
     }
 
@@ -425,7 +419,7 @@ static void hidh_l2cif_connect_cfm (UINT16 l2cap_cid, UINT16 result)
 #endif
         {
             reason = HID_L2CAP_CONN_FAIL | (UINT32) result ;
-            hh_cb.callback( dhandle, HID_HDEV_EVT_CLOSE, reason, NULL ) ;
+            hh_cb.callback( dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE, reason, NULL ) ;
         }
         return;
     }
@@ -446,7 +440,7 @@ static void hidh_l2cif_connect_cfm (UINT16 l2cap_cid, UINT16 result)
         p_hcon->conn_state = HID_CONN_STATE_CONFIG;
         /* Send a Configuration Request. */
         L2CA_ConfigReq (l2cap_cid, &hh_cb.l2cap_cfg);
-        HIDH_TRACE_EVENT1 ("HID - got Interrupt conn cnf, sent cfg req, CID: 0x%x", l2cap_cid);
+        HIDH_TRACE_EVENT1 ("HID-Host got Interrupt conn cnf, sent cfg req, CID: 0x%x", l2cap_cid);
     }
 
     return;
@@ -478,11 +472,11 @@ static void hidh_l2cif_config_ind (UINT16 l2cap_cid, tL2CAP_CFG_INFO *p_cfg)
 
     if (p_hcon == NULL)
     {
-        HIDH_TRACE_WARNING1 ("HID - Rcvd L2CAP cfg ind, unknown CID: 0x%x", l2cap_cid);
+        HIDH_TRACE_WARNING1 ("HID-Host Rcvd L2CAP cfg ind, unknown CID: 0x%x", l2cap_cid);
         return;
     }
 
-    HIDH_TRACE_EVENT1 ("HID - Rcvd cfg ind, sent cfg cfm, CID: 0x%x", l2cap_cid);
+    HIDH_TRACE_EVENT1 ("HID-Host Rcvd cfg ind, sent cfg cfm, CID: 0x%x", l2cap_cid);
 
     /* Remember the remote MTU size */
     if ((!p_cfg->mtu_present) || (p_cfg->mtu > HID_HOST_MTU))
@@ -507,11 +501,11 @@ static void hidh_l2cif_config_ind (UINT16 l2cap_cid, tL2CAP_CFG_INFO *p_cfg)
             p_hcon->disc_reason = HID_L2CAP_CONN_FAIL;	/* Reset initial reason for CLOSE_EVT: Connection Attempt was made but failed */
             if ((p_hcon->intr_cid = L2CA_ConnectReq (HID_PSM_INTERRUPT, hh_cb.devices[dhandle].addr)) == 0)
             {
-                HIDH_TRACE_WARNING0 ("HID - INTR Originate failed");
+                HIDH_TRACE_WARNING0 ("HID-Host INTR Originate failed");
                 reason = HID_L2CAP_REQ_FAIL ;
                 p_hcon->conn_state = HID_CONN_STATE_UNUSED;
                 hidh_conn_disconnect (dhandle);
-                hh_cb.callback( dhandle, HID_HDEV_EVT_CLOSE, reason, NULL ) ;
+                hh_cb.callback( dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE, reason, NULL ) ;
                 return;
             }
             else
@@ -533,7 +527,7 @@ static void hidh_l2cif_config_ind (UINT16 l2cap_cid, tL2CAP_CFG_INFO *p_cfg)
         p_hcon->disc_reason = HID_SUCCESS;
 
         hh_cb.devices[dhandle].state = HID_DEV_CONNECTED;
-        hh_cb.callback( dhandle, HID_HDEV_EVT_OPEN, 0, NULL ) ;
+        hh_cb.callback( dhandle,  hh_cb.devices[dhandle].addr, HID_HDEV_EVT_OPEN, 0, NULL ) ;
     }
 }
 
@@ -554,7 +548,7 @@ static void hidh_l2cif_config_cfm (UINT16 l2cap_cid, tL2CAP_CFG_INFO *p_cfg)
     tHID_CONN    *p_hcon = NULL;
     UINT32  reason;
 
-    HIDH_TRACE_EVENT2 ("HID - Rcvd cfg cfm, CID: 0x%x  Result: %d", l2cap_cid, p_cfg->result);
+    HIDH_TRACE_EVENT2 ("HID-Host Rcvd cfg cfm, CID: 0x%x  Result: %d", l2cap_cid, p_cfg->result);
 
     /* Find CCB based on CID */
     if( (dhandle = find_conn_by_cid(l2cap_cid)) < HID_HOST_MAX_DEVICES )
@@ -562,7 +556,7 @@ static void hidh_l2cif_config_cfm (UINT16 l2cap_cid, tL2CAP_CFG_INFO *p_cfg)
 
     if (p_hcon == NULL)
     {
-        HIDH_TRACE_WARNING1 ("HID - Rcvd L2CAP cfg ind, unknown CID: 0x%x", l2cap_cid);
+        HIDH_TRACE_WARNING1 ("HID-Host Rcvd L2CAP cfg ind, unknown CID: 0x%x", l2cap_cid);
         return;
     }
 
@@ -571,7 +565,7 @@ static void hidh_l2cif_config_cfm (UINT16 l2cap_cid, tL2CAP_CFG_INFO *p_cfg)
     {
         hidh_conn_disconnect (dhandle);
         reason = HID_L2CAP_CFG_FAIL | (UINT32) p_cfg->result ;
-        hh_cb.callback( dhandle, HID_HDEV_EVT_CLOSE, reason, NULL ) ;
+        hh_cb.callback( dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE, reason, NULL ) ;
         return;
     }
 
@@ -585,11 +579,11 @@ static void hidh_l2cif_config_cfm (UINT16 l2cap_cid, tL2CAP_CFG_INFO *p_cfg)
             p_hcon->disc_reason = HID_L2CAP_CONN_FAIL;  /* Reset initial reason for CLOSE_EVT: Connection Attempt was made but failed */
             if ((p_hcon->intr_cid = L2CA_ConnectReq (HID_PSM_INTERRUPT, hh_cb.devices[dhandle].addr)) == 0)
             {
-                HIDH_TRACE_WARNING0 ("HID - INTR Originate failed");
+                HIDH_TRACE_WARNING0 ("HID-Host INTR Originate failed");
                 reason = HID_L2CAP_REQ_FAIL ;
                 p_hcon->conn_state = HID_CONN_STATE_UNUSED;
                 hidh_conn_disconnect (dhandle);
-                hh_cb.callback( dhandle, HID_HDEV_EVT_CLOSE, reason, NULL ) ;
+                hh_cb.callback( dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE, reason, NULL ) ;
                 return;
             }
             else
@@ -611,7 +605,7 @@ static void hidh_l2cif_config_cfm (UINT16 l2cap_cid, tL2CAP_CFG_INFO *p_cfg)
         p_hcon->disc_reason = HID_SUCCESS;
 
         hh_cb.devices[dhandle].state = HID_DEV_CONNECTED;
-        hh_cb.callback( dhandle, HID_HDEV_EVT_OPEN, 0, NULL ) ;
+        hh_cb.callback( dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_OPEN, 0, NULL ) ;
     }
 }
 
@@ -639,14 +633,14 @@ static void hidh_l2cif_disconnect_ind (UINT16 l2cap_cid, BOOLEAN ack_needed)
 
     if (p_hcon == NULL)
     {
-        HIDH_TRACE_WARNING1 ("HID - Rcvd L2CAP disc, unknown CID: 0x%x", l2cap_cid);
+        HIDH_TRACE_WARNING1 ("HID-Host Rcvd L2CAP disc, unknown CID: 0x%x", l2cap_cid);
         return;
     }
 
     if (ack_needed)
         L2CA_DisconnectRsp (l2cap_cid);
 
-    HIDH_TRACE_EVENT1 ("HID - Rcvd L2CAP disc, CID: 0x%x", l2cap_cid);
+    HIDH_TRACE_EVENT1 ("HID-Host Rcvd L2CAP disc, CID: 0x%x", l2cap_cid);
 
     p_hcon->conn_state = HID_CONN_STATE_DISCONNECTING;
 
@@ -659,17 +653,6 @@ static void hidh_l2cif_disconnect_ind (UINT16 l2cap_cid, BOOLEAN ack_needed)
     {
         hh_cb.devices[dhandle].state = HID_DEV_NO_CONN;
         p_hcon->conn_state = HID_CONN_STATE_UNUSED;
-        if (hh_cb.incoming_conn_info &&
-            memcmp(hh_cb.incoming_conn_info->bd_addr, hh_cb.devices[dhandle].addr,
-            BD_ADDR_LEN) == 0)
-        {
-            /* Reset the status for SDP of unknown device if in progress */
-            hh_cb.unknown_dev_sdp_in_prog = FALSE;
-            HIDH_TRACE_ERROR0 ("hidh_l2cif_disconnect_ind: freeing hh_cb.incoming_conn_info");
-            /* Free the buffer */
-            GKI_freebuf(hh_cb.incoming_conn_info);
-            hh_cb.incoming_conn_info = NULL;
-        }
 
         if( !ack_needed )
             disc_res = btm_get_acl_disc_reason_code();
@@ -702,7 +685,7 @@ static void hidh_l2cif_disconnect_ind (UINT16 l2cap_cid, BOOLEAN ack_needed)
                 hid_close_evt_reason = HID_ERR_AUTH_FAILED;
             }
 
-            hh_cb.callback( dhandle, HID_HDEV_EVT_CLOSE, hid_close_evt_reason, NULL ) ;
+            hh_cb.callback( dhandle,  hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE, hid_close_evt_reason, NULL ) ;
         }
     }
 }
@@ -728,33 +711,29 @@ static void hidh_l2cif_disconnect_cfm (UINT16 l2cap_cid, UINT16 result)
 
     if (p_hcon == NULL)
     {
-        HIDH_TRACE_WARNING1 ("HID - Rcvd L2CAP disc cfm, unknown CID: 0x%x", l2cap_cid);
+        HIDH_TRACE_WARNING1 ("HID-Host Rcvd L2CAP disc cfm, unknown CID: 0x%x", l2cap_cid);
         return;
     }
 
-    HIDH_TRACE_EVENT1 ("HID - Rcvd L2CAP disc cfm, CID: 0x%x", l2cap_cid);
+    HIDH_TRACE_EVENT1 ("HID-Host Rcvd L2CAP disc cfm, CID: 0x%x", l2cap_cid);
 
     if (l2cap_cid == p_hcon->ctrl_cid)
         p_hcon->ctrl_cid = 0;
     else
+    {
         p_hcon->intr_cid = 0;
+        if (p_hcon->ctrl_cid)
+        {
+            HIDH_TRACE_EVENT0 ("HID-Host Initiating L2CAP Ctrl disconnection");
+            L2CA_DisconnectReq (p_hcon->ctrl_cid);
+        }
+    }
 
     if ((p_hcon->ctrl_cid == 0) && (p_hcon->intr_cid == 0))
     {
         hh_cb.devices[dhandle].state = HID_DEV_NO_CONN;
         p_hcon->conn_state = HID_CONN_STATE_UNUSED;
-        hh_cb.callback( dhandle, HID_HDEV_EVT_CLOSE, p_hcon->disc_reason, NULL ) ;
-        if (hh_cb.incoming_conn_info &&
-            memcmp(hh_cb.incoming_conn_info->bd_addr, hh_cb.devices[dhandle].addr,
-            BD_ADDR_LEN) == 0)
-        {
-            HIDH_TRACE_ERROR0 ("hidh_l2cif_disconnect_cfm: freeing hh_cb.incoming_conn_info");
-            /* Reset the status for SDP of unknown device if in progress */
-            hh_cb.unknown_dev_sdp_in_prog = FALSE;
-            /* Free the buffer */
-            GKI_freebuf(hh_cb.incoming_conn_info);
-            hh_cb.incoming_conn_info = NULL;
-        }
+        hh_cb.callback( dhandle, hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE, p_hcon->disc_reason, NULL ) ;
     }
 }
 
@@ -779,11 +758,11 @@ static void hidh_l2cif_cong_ind (UINT16 l2cap_cid, BOOLEAN congested)
 
     if (p_hcon == NULL)
     {
-        HIDH_TRACE_WARNING1 ("HID - Rcvd L2CAP congestion status, unknown CID: 0x%x", l2cap_cid);
+        HIDH_TRACE_WARNING1 ("HID-Host Rcvd L2CAP congestion status, unknown CID: 0x%x", l2cap_cid);
         return;
     }
 
-    HIDH_TRACE_EVENT2 ("HID - Rcvd L2CAP congestion status, CID: 0x%x  Cong: %d", l2cap_cid, congested);
+    HIDH_TRACE_EVENT2 ("HID-Host Rcvd L2CAP congestion status, CID: 0x%x  Cong: %d", l2cap_cid, congested);
 
     if (congested)
         p_hcon->conn_flags |= HID_CONN_FLAGS_CONGESTED;
@@ -817,7 +796,7 @@ static void hidh_l2cif_data_ind (UINT16 l2cap_cid, BT_HDR *p_msg)
     UINT8 dhandle;
     tHID_CONN    *p_hcon = NULL;
 
-    HIDH_TRACE_DEBUG1 ("HID - hidh_l2cif_data_ind [l2cap_cid=0x%04x]", l2cap_cid);
+    HIDH_TRACE_DEBUG1 ("HID-Host hidh_l2cif_data_ind [l2cap_cid=0x%04x]", l2cap_cid);
 
     /* Find CCB based on CID */
      if ((dhandle = find_conn_by_cid(l2cap_cid)) < HID_HOST_MAX_DEVICES)
@@ -825,7 +804,7 @@ static void hidh_l2cif_data_ind (UINT16 l2cap_cid, BT_HDR *p_msg)
 
     if (p_hcon == NULL)
     {
-        HIDH_TRACE_WARNING1 ("HID - Rcvd L2CAP data, unknown CID: 0x%x", l2cap_cid);
+        HIDH_TRACE_WARNING1 ("HID-Host Rcvd L2CAP data, unknown CID: 0x%x", l2cap_cid);
         GKI_freebuf (p_msg);
         return;
     }
@@ -843,7 +822,7 @@ static void hidh_l2cif_data_ind (UINT16 l2cap_cid, BT_HDR *p_msg)
     switch (ttype)
     {
     case HID_TRANS_HANDSHAKE:
-        hh_cb.callback(dhandle, HID_HDEV_EVT_HANDSHAKE, param, NULL);
+        hh_cb.callback(dhandle,  hh_cb.devices[dhandle].addr, HID_HDEV_EVT_HANDSHAKE, param, NULL);
         GKI_freebuf (p_msg);
         break;
 
@@ -853,7 +832,7 @@ static void hidh_l2cif_data_ind (UINT16 l2cap_cid, BT_HDR *p_msg)
         case HID_PAR_CONTROL_VIRTUAL_CABLE_UNPLUG:
             hidh_conn_disconnect( dhandle ) ;
             /* Device is unplugging from us. Tell USB */
-            hh_cb.callback(dhandle, HID_HDEV_EVT_VC_UNPLUG, 0, NULL);
+            hh_cb.callback(dhandle,  hh_cb.devices[dhandle].addr, HID_HDEV_EVT_VC_UNPLUG, 0, NULL);
             break;
 
         default:
@@ -866,13 +845,13 @@ static void hidh_l2cif_data_ind (UINT16 l2cap_cid, BT_HDR *p_msg)
     case HID_TRANS_DATA:
         evt = (hh_cb.devices[dhandle].conn.intr_cid == l2cap_cid) ?
                     HID_HDEV_EVT_INTR_DATA : HID_HDEV_EVT_CTRL_DATA;
-        hh_cb.callback(dhandle, evt, rep_type, p_msg);
+        hh_cb.callback(dhandle, hh_cb.devices[dhandle].addr, evt, rep_type, p_msg);
         break;
 
     case HID_TRANS_DATAC:
         evt = (hh_cb.devices[dhandle].conn.intr_cid == l2cap_cid) ?
                     HID_HDEV_EVT_INTR_DATC : HID_HDEV_EVT_CTRL_DATC;
-        hh_cb.callback(dhandle, evt, rep_type, p_msg);
+        hh_cb.callback(dhandle,  hh_cb.devices[dhandle].addr, evt, rep_type, p_msg);
         break;
 
     default:
@@ -1026,7 +1005,7 @@ tHID_STATUS hidh_conn_snd_data (UINT8 dhandle, UINT8 trans_type, UINT8 param,
 *******************************************************************************/
 tHID_STATUS hidh_conn_initiate (UINT8 dhandle)
 {
-    UINT8   service_id = BTM_SEC_SERVICE_HID_NOSEC_CTRL;
+    UINT8   service_id = BTM_SEC_SERVICE_HIDH_NOSEC_CTRL;
     UINT32  mx_chan_id = HID_NOSEC_CHN;
 
     tHID_HOST_DEV_CTB *p_dev = &hh_cb.devices[dhandle];
@@ -1043,7 +1022,7 @@ tHID_STATUS hidh_conn_initiate (UINT8 dhandle)
 
     if(p_dev->attr_mask & HID_SEC_REQUIRED)
     {
-        service_id = BTM_SEC_SERVICE_HID_SEC_CTRL;
+        service_id = BTM_SEC_SERVICE_HIDH_SEC_CTRL;
         mx_chan_id = HID_SEC_CHN;
     }
     BTM_SetOutService (p_dev->addr, service_id, mx_chan_id);
@@ -1051,8 +1030,9 @@ tHID_STATUS hidh_conn_initiate (UINT8 dhandle)
     /* Check if L2CAP started the connection process */
     if ((p_dev->conn.ctrl_cid = L2CA_ConnectReq (HID_PSM_CONTROL, p_dev->addr)) == 0)
     {
-        HIDH_TRACE_WARNING0 ("HID - Originate failed");
-        hh_cb.callback( dhandle, HID_HDEV_EVT_CLOSE, HID_ERR_L2CAP_FAILED, NULL ) ;
+        HIDH_TRACE_WARNING0 ("HID-Host Originate failed");
+        hh_cb.callback( dhandle,  hh_cb.devices[dhandle].addr, HID_HDEV_EVT_CLOSE,
+                                HID_ERR_L2CAP_FAILED, NULL ) ;
     }
     else
     {
@@ -1091,91 +1071,6 @@ void hidh_conn_dereg( void )
 {
     L2CA_Deregister (HID_PSM_CONTROL);
     L2CA_Deregister (HID_PSM_INTERRUPT);
-}
-
-void hidh_send_l2cap_connect_rsp( UINT8 status )
-{
-    tHID_CONN    *p_hcon;
-    BOOLEAN      bAccept = TRUE;
-    int i;
-    tHID_HOST_DEV_CTB *p_dev;
-
-    if (hh_cb.incoming_conn_info == NULL)
-        return;
-
-    if (status)
-    {
-        HIDH_TRACE_ERROR1 ("sdp query failed with reason %d, sending security block", status);
-        L2CA_ConnectRsp (hh_cb.incoming_conn_info->bd_addr, hh_cb.incoming_conn_info->l2cap_id,
-                    hh_cb.incoming_conn_info->l2cap_cid, L2CAP_CONN_SECURITY_BLOCK, 0);
-        /* Free the buffer */
-        GKI_freebuf(hh_cb.incoming_conn_info);
-        hh_cb.incoming_conn_info = NULL;
-        hh_cb.unknown_dev_sdp_in_prog = FALSE;
-        return;
-    }
-
-    for( i=0; i < HID_HOST_MAX_DEVICES; i++ )
-    {
-        if( hh_cb.devices[i].in_use && (!memcmp(hh_cb.incoming_conn_info->bd_addr,
-                hh_cb.devices[i].addr, sizeof(BD_ADDR))) )
-            break;
-    }
-
-    if (i >= HID_HOST_MAX_DEVICES)
-    {
-        HIDH_TRACE_ERROR2 ("device still not added in database after sdp, "
-            "sending security block", i, HID_HOST_MAX_DEVICES);
-        /* Send Security Block */
-        L2CA_ConnectRsp (hh_cb.incoming_conn_info->bd_addr, hh_cb.incoming_conn_info->l2cap_id,
-            hh_cb.incoming_conn_info->l2cap_cid, L2CAP_CONN_SECURITY_BLOCK, 0);
-        /* Free the buffer */
-        GKI_freebuf(hh_cb.incoming_conn_info);
-        hh_cb.incoming_conn_info = NULL;
-        hh_cb.unknown_dev_sdp_in_prog = FALSE;
-        return;
-    }
-
-    p_hcon = &hh_cb.devices[i].conn;
-    p_dev  = &hh_cb.devices[i];
-
-#if defined(HID_HOST_ACPT_NEW_CONN) && (HID_HOST_ACPT_NEW_CONN == TRUE)
-    p_hcon->ctrl_cid = p_hcon->intr_cid = 0;
-    p_hcon->conn_state = HID_CONN_STATE_UNUSED;
-#else
-    if (p_hcon->conn_state != HID_CONN_STATE_UNUSED)
-    {
-        HIDH_TRACE_WARNING1 ("HID - Rcvd CTL L2CAP conn ind, wrong state: %d", p_hcon->conn_state);
-        bAccept = FALSE;
-    }
-#endif
-
-    if (!bAccept)
-    {
-        L2CA_ConnectRsp (hh_cb.incoming_conn_info->bd_addr, hh_cb.incoming_conn_info->l2cap_id,
-            hh_cb.incoming_conn_info->l2cap_cid, L2CAP_CONN_NO_RESOURCES, 0);
-        /* Free the buffer */
-        GKI_freebuf(hh_cb.incoming_conn_info);
-        hh_cb.incoming_conn_info = NULL;
-        hh_cb.unknown_dev_sdp_in_prog = FALSE;
-        return;
-    }
-
-    p_hcon->conn_flags = 0;
-    p_hcon->ctrl_cid   = hh_cb.incoming_conn_info->l2cap_cid;
-    p_hcon->ctrl_id    = hh_cb.incoming_conn_info->l2cap_id;
-    p_hcon->disc_reason = HID_L2CAP_CONN_FAIL;  /* In case disconnection occurs before security is completed, then set CLOSE_EVT reason code to 'connection failure' */
-
-    p_hcon->conn_state = HID_CONN_STATE_SECURITY;
-    btm_sec_mx_access_request (p_dev->addr, HID_PSM_CONTROL,
-        FALSE, BTM_SEC_PROTO_HID,
-        (p_dev->attr_mask & HID_SEC_REQUIRED) ? HID_SEC_CHN : HID_NOSEC_CHN,
-        &hidh_sec_check_complete_term, p_dev);
-
-    /* Free the buffer */
-    GKI_freebuf(hh_cb.incoming_conn_info);
-    hh_cb.incoming_conn_info = NULL;
-    hh_cb.unknown_dev_sdp_in_prog = FALSE;
 }
 
 /*******************************************************************************

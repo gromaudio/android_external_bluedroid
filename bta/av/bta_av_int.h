@@ -1,7 +1,6 @@
 /******************************************************************************
  *
  *  Copyright (C) 2004-2012 Broadcom Corporation
- *  Copyright (C) 2014 Tieto Corporation
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -59,9 +58,6 @@ enum
     BTA_AV_API_PROTECT_RSP_EVT,
     BTA_AV_API_RC_OPEN_EVT,
     BTA_AV_SRC_DATA_READY_EVT,
-#ifdef A2DP_SINK
-    BTA_AV_SNK_DATA_READY_EVT,
-#endif
     BTA_AV_CI_SETCONFIG_OK_EVT,
     BTA_AV_CI_SETCONFIG_FAIL_EVT,
     BTA_AV_SDP_DISC_OK_EVT,
@@ -94,9 +90,6 @@ enum
     BTA_AV_API_DEREGISTER_EVT,
     BTA_AV_API_DISCONNECT_EVT,
     BTA_AV_CI_SRC_DATA_READY_EVT,
-#ifdef A2DP_SINK
-    BTA_AV_CI_SNK_DATA_READY_EVT,
-#endif
     BTA_AV_SIG_CHG_EVT,
     BTA_AV_SIG_TIMER_EVT,
     BTA_AV_SDP_AVRC_DISC_EVT,
@@ -163,16 +156,15 @@ enum
 /* function types for call-out functions */
 typedef BOOLEAN (*tBTA_AV_CO_INIT) (UINT8 *p_codec_type, UINT8 *p_codec_info,
                                    UINT8 *p_num_protect, UINT8 *p_protect_info, UINT8 index);
-
 typedef void (*tBTA_AV_CO_DISC_RES) (tBTA_AV_HNDL hndl, UINT8 num_seps,
                                      UINT8 num_snk, BD_ADDR addr);
-
 typedef UINT8 (*tBTA_AV_CO_GETCFG) (tBTA_AV_HNDL hndl, tBTA_AV_CODEC codec_type,
                                      UINT8 *p_codec_info, UINT8 *p_sep_info_idx, UINT8 seid,
                                      UINT8 *p_num_protect, UINT8 *p_protect_info);
 typedef void (*tBTA_AV_CO_SETCFG) (tBTA_AV_HNDL hndl, tBTA_AV_CODEC codec_type,
-                                    UINT8 *p_codec_info, UINT8 seid, BD_ADDR addr,
-                                    UINT8 num_protect, UINT8 *p_protect_info);
+                                     UINT8 *p_codec_info, UINT8 seid, BD_ADDR addr,
+                                     UINT8 num_protect, UINT8 *p_protect_info,
+                                     UINT8 t_local_sep, UINT8 avdt_handle);
 typedef void (*tBTA_AV_CO_OPEN) (tBTA_AV_HNDL hndl,
                                  tBTA_AV_CODEC codec_type, UINT8 *p_codec_info,
                                    UINT16 mtu);
@@ -181,10 +173,6 @@ typedef void (*tBTA_AV_CO_START) (tBTA_AV_HNDL hndl, tBTA_AV_CODEC codec_type,UI
 typedef void (*tBTA_AV_CO_STOP) (tBTA_AV_HNDL hndl, tBTA_AV_CODEC codec_type);
 typedef void * (*tBTA_AV_CO_DATAPATH) (tBTA_AV_CODEC codec_type,
                                        UINT32 *p_len, UINT32 *p_timestamp);
-#ifdef A2DP_SINK
-typedef BOOLEAN (*tBTA_AV_CO_SNK_DATAPATH) (tBTA_AV_CODEC codec_type,
-                                            BT_HDR *p_buf);
-#endif
 typedef void (*tBTA_AV_CO_DELAY) (tBTA_AV_HNDL hndl, UINT16 delay);
 
 /* the call-out functions for one stream */
@@ -199,9 +187,6 @@ typedef struct
     tBTA_AV_CO_START    start;
     tBTA_AV_CO_STOP     stop;
     tBTA_AV_CO_DATAPATH data;
-#ifdef A2DP_SINK
-    tBTA_AV_CO_SNK_DATAPATH snk_data;
-#endif
     tBTA_AV_CO_DELAY    delay;
 } tBTA_AV_CO_FUNCTS;
 
@@ -220,6 +205,7 @@ typedef struct
     BT_HDR              hdr;
     char                p_service_name[BTA_SERVICE_NAME_LEN+1];
     UINT8               app_id;
+    tBTA_AV_DATA_CBACK       *p_app_data_cback;
 } tBTA_AV_API_REG;
 
 
@@ -333,6 +319,7 @@ typedef struct
     UINT8               num_seid;
     UINT8               *p_seid;
     BOOLEAN             recfg_needed;
+    UINT8               avdt_handle;  /* local sep type for which this stream will be set up */
 } tBTA_AV_CI_SETCONFIG;
 
 /* data type for all stream events from AVDTP */
@@ -390,8 +377,10 @@ typedef struct
 /* type for SEP control block */
 typedef struct
 {
-    UINT8               av_handle;      /* AVDTP handle */
-    tBTA_AV_CODEC       codec_type;     /* codec type */
+    UINT8               av_handle;         /* AVDTP handle */
+    tBTA_AV_CODEC       codec_type;        /* codec type */
+    UINT8               tsep;              /* SEP type of local SEP */
+    tBTA_AV_DATA_CBACK  *p_app_data_cback; /* Application callback for media packets */
 } tBTA_AV_SEP;
 
 
@@ -468,6 +457,7 @@ typedef union
 /* Bitmap for collision, coll_mask */
 #define BTA_AV_COLL_INC_TMR             0x01 /* Timer is running for incoming L2C connection */
 #define BTA_AV_COLL_API_CALLED          0x02 /* API open was called while incoming timer is running */
+#define BTA_AV_COLL_SETCONFIG_IND    0x04 /* SetConfig indication has been called by remote */
 
 /* type for AV stream control block */
 typedef struct
@@ -568,6 +558,9 @@ typedef struct
     TIMER_LIST_ENT      sig_tmr;        /* link timer */
     TIMER_LIST_ENT      acp_sig_tmr;    /* timer to monitor signalling when accepting */
     UINT32              sdp_a2d_handle; /* SDP record handle for audio src */
+#ifdef BTA_AVK_INCLUDED
+    UINT32              sdp_a2d_snk_handle; /* SDP record handle for audio snk */
+#endif
     UINT32              sdp_vdp_handle; /* SDP record handle for video src */
     tBTA_AV_FEAT        features;       /* features mask */
     tBTA_SEC            sec_mask;       /* security mask */
@@ -615,6 +608,7 @@ extern const tBTA_AV_SACT bta_av_a2d_action[];
 extern const tBTA_AV_CO_FUNCTS bta_av_a2d_cos;
 extern const tBTA_AV_SACT bta_av_vdp_action[];
 extern tAVDT_CTRL_CBACK * const bta_av_dt_cback[];
+extern void bta_av_stream_data_cback(UINT8 handle, BT_HDR *p_pkt, UINT32 time_stamp, UINT8 m_pt);
 
 /*****************************************************************************
 **  Function prototypes
@@ -701,9 +695,6 @@ extern void bta_av_do_start (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data);
 extern void bta_av_str_stopped (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data);
 extern void bta_av_reconfig (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data);
 extern void bta_av_data_path (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data);
-#ifdef A2DP_SINK
-extern void bta_av_snk_data_path (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data);
-#endif
 extern void bta_av_start_ok (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data);
 extern void bta_av_start_failed (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data);
 extern void bta_av_str_closed (tBTA_AV_SCB *p_scb, tBTA_AV_DATA *p_data);

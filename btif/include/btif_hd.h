@@ -1,6 +1,8 @@
 /******************************************************************************
  *
- *  Copyright (C) 2014 Tieto Corporation
+ *  Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ *  Not a Contribution.
+ *  Copyright (C) 2009-2012 Broadcom Corporation
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -16,20 +18,30 @@
  *
  ******************************************************************************/
 
-/******************************************************************************
- *
- *  SBC decoder stub
- *
- ******************************************************************************/
-#include "sbc_decoder.h"
+#ifndef BTIF_HD_H
+#define BTIF_HD_H
 
-void SBC_Decoder(SBC_DEC_PARAMS *pstrDecParams)
+#include <hardware/bluetooth.h>
+#include <hardware/bt_hd.h>
+#include <stdint.h>
+#include "bta_hd_api.h"
+
+typedef enum
 {
-    pstrDecParams->s16PcmLength      = 0;
-    pstrDecParams->s16SbcFrameLength = 0;
-}
+    BTIF_HD_DISABLED  = 0,
+    BTIF_HD_ENABLED,
+    BTIF_HD_DISABLING
+} BTIF_HD_STATUS;
 
-void SBC_Decoder_Init(SBC_DEC_PARAMS *pstrDecParams)
+/** BTIF-HD control block */
+typedef struct
 {
-}
+    BTIF_HD_STATUS  status;
+    BOOLEAN         app_registered;
+} btif_hd_cb_t;
 
+extern btif_hd_cb_t btif_hd_cb;
+
+extern void btif_hd_remove_device(bt_bdaddr_t bd_addr);
+
+#endif
