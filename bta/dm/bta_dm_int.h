@@ -60,6 +60,7 @@ enum
     BTA_DM_API_TX_INQPWR_EVT,
     BTA_DM_ACL_CHANGE_EVT,
     BTA_DM_API_ADD_DEVICE_EVT,
+    BTA_DM_API_REMOVE_ACL_EVT,
 
     /* security API events */
     BTA_DM_API_BOND_EVT,
@@ -77,6 +78,7 @@ enum
 
     BTA_DM_API_SET_ENCRYPTION_EVT,
 
+
 #if (BTM_LOCAL_IO_CAPS != BTM_IO_CAP_NONE)
     BTA_DM_API_PASKY_CANCEL_EVT,
 #endif
@@ -87,6 +89,7 @@ enum
 #endif /* BTM_OOB_INCLUDED */
 
     BTA_DM_API_REMOVE_DEVICE_EVT,
+    BTA_DM_API_REM_NAME_EVT,
 
 #if BLE_INCLUDED == TRUE
     BTA_DM_API_ADD_BLEKEY_EVT,
@@ -96,6 +99,7 @@ enum
     BTA_DM_API_BLE_SET_BG_CONN_TYPE,
     BTA_DM_API_BLE_CONN_PARAM_EVT,
     BTA_DM_API_BLE_SCAN_PARAM_EVT,
+    BTA_DM_API_BLE_OBSERVE_EVT,
 #endif
 
 #if ( BTM_EIR_SERVER_INCLUDED == TRUE )&&( BTA_EIR_CANNED_UUID_LIST != TRUE )&&(BTA_EIR_SERVER_NUM_CUSTOM_UUID > 0)
@@ -109,6 +113,7 @@ enum
     BTA_DM_API_DISABLE_TEST_MODE_EVT,
     BTA_DM_API_EXECUTE_CBACK_EVT,
     BTA_DM_API_SET_AFH_CHANNEL_ASSESMENT_EVT,
+    BTA_DM_API_HCI_RAW_COMMAND_EVT,
     BTA_DM_MAX_EVT
 };
 
@@ -140,7 +145,7 @@ typedef struct
 typedef struct
 {
     BT_HDR              hdr;
-    char    name[BD_NAME_LEN];
+    BD_NAME             name; /* max 248 bytes name, plus must be Null terminated */
 } tBTA_DM_API_SET_NAME;
 
 /* data type for BTA_DM_API_SET_VISIBILITY_EVT */
@@ -160,6 +165,16 @@ typedef struct
     UINT8           first;
     UINT8           last;
 } tBTA_DM_API_SET_AFH_CHANNELS_EVT;
+
+/* data type for BTA_DM_API_HCI_RAW_COMMAND_EVT */
+typedef struct
+{
+    BT_HDR              hdr;
+    UINT16              opcode;
+    UINT8               param_len;
+    UINT8               *p_param_buf;
+    tBTA_RAW_CMPL_CBACK *p_cback;
+} tBTA_DM_API_RAW_COMMAND;
 
 /* data type for BTA_DM_API_VENDOR_SPECIFIC_COMMAND_EVT */
 typedef struct
@@ -282,6 +297,14 @@ typedef struct
     BD_ADDR     bd_addr;
 } tBTA_DM_API_PASKY_CANCEL;
 
+/* data type for BTA_DM_API_REM_NAME_EVT*/
+typedef struct
+{
+    BT_HDR      hdr;
+    tBTA_DM_REM_NAME_CBACK * p_cback;
+    BD_ADDR     bd_addr;
+} tBTA_DM_API_REM_NAME;
+
 /* data type for BTA_DM_CI_IO_REQ_EVT */
 typedef struct
 {
@@ -353,6 +376,7 @@ typedef struct
     BT_HDR          hdr;
     tBTM_BL_EVENT   event;
     UINT8           busy_level;
+    UINT8           busy_level_flags;
     BOOLEAN         is_new;
     UINT8           new_role;
     BD_ADDR         bd_addr;
@@ -394,7 +418,8 @@ typedef struct
     BOOLEAN             link_key_known;
     BOOLEAN             dc_known;
     BD_NAME             bd_name;
-    BD_FEATURES         features;
+    UINT8               features[BTA_FEATURE_BYTES_PER_PAGE * (BTA_EXT_FEATURES_PAGE_MAX + 1)];
+    UINT8               pin_len;
 } tBTA_DM_API_ADD_DEVICE;
 
 /* data type for BTA_DM_API_REMOVE_ACL_EVT */
@@ -475,6 +500,20 @@ typedef struct
 
 }tBTA_DM_API_BLE_CONN_PARAMS;
 
+typedef struct
+{
+    BT_HDR                  hdr;
+    BD_ADDR                 peer_bda;
+    BOOLEAN                 privacy_enable;
+
+}tBTA_DM_API_ENABLE_PRIVACY;
+
+typedef struct
+{
+    BT_HDR                  hdr;
+    BOOLEAN                 privacy_enable;
+}tBTA_DM_API_LOCAL_PRIVACY;
+
 /* set scan parameter for BLE connections */
 typedef struct
 {
@@ -482,6 +521,31 @@ typedef struct
     UINT16                  scan_int;
     UINT16                  scan_window;
 }tBTA_DM_API_BLE_SCAN_PARAMS;
+
+/* Data type for start/stop observe */
+typedef struct
+{
+    BT_HDR                  hdr;
+    BOOLEAN                 start;
+    UINT16                  duration;
+    tBTA_DM_SEARCH_CBACK * p_cback;
+}tBTA_DM_API_BLE_OBSERVE;
+
+/* set adv parameter for BLE advertising */
+typedef struct
+{
+    BT_HDR                  hdr;
+    UINT16                  adv_int_min;
+    UINT16                  adv_int_max;
+    tBLE_BD_ADDR            *p_dir_bda;
+}tBTA_DM_API_BLE_ADV_PARAMS;
+
+typedef struct
+{
+    BT_HDR                  hdr;
+    UINT16                  data_mask;
+    tBTA_BLE_ADV_DATA       *p_adv_cfg;
+}tBTA_DM_API_SET_ADV_CONFIG;
 
 #endif
 
@@ -510,6 +574,14 @@ typedef struct
 }tBTA_DM_API_SET_EIR_CONFIG;
 #endif
 
+/* data type for BTA_DM_API_REMOVE_ACL_EVT */
+typedef struct
+{
+    BT_HDR      hdr;
+    BD_ADDR     bd_addr;
+    BOOLEAN     remove_dev;
+}tBTA_DM_API_REMOVE_ACL;
+
 /* union of all data types */
 typedef union
 {
@@ -536,6 +608,8 @@ typedef union
     tBTA_DM_API_BOND bond;
 
     tBTA_DM_API_BOND_CANCEL bond_cancel;
+
+    tBTA_DM_API_REM_NAME remote_name;
 
     tBTA_DM_API_PIN_REPLY pin_reply;
     tBTA_DM_API_LINK_POLICY link_policy;
@@ -580,6 +654,11 @@ typedef union
     tBTA_DM_API_BLE_SET_BG_CONN_TYPE    ble_set_bd_conn_type;
     tBTA_DM_API_BLE_CONN_PARAMS         ble_set_conn_params;
     tBTA_DM_API_BLE_SCAN_PARAMS         ble_set_scan_params;
+    tBTA_DM_API_BLE_OBSERVE             ble_observe;
+    tBTA_DM_API_ENABLE_PRIVACY          ble_remote_privacy;
+    tBTA_DM_API_LOCAL_PRIVACY           ble_local_privacy;
+    tBTA_DM_API_BLE_ADV_PARAMS          ble_set_adv_params;
+    tBTA_DM_API_SET_ADV_CONFIG          ble_set_adv_data;
 #endif
 
     tBTA_DM_API_SET_AFH_CHANNEL_ASSESSMENT set_afh_channel_assessment;
@@ -590,6 +669,8 @@ typedef union
 #if (BTM_EIR_SERVER_INCLUDED == TRUE)
     tBTA_DM_API_SET_EIR_CONFIG          set_eir_cfg;
 #endif
+    tBTA_DM_API_REMOVE_ACL              remove_acl;
+    tBTA_DM_API_RAW_COMMAND btc_command;
 
 } tBTA_DM_MSG;
 
@@ -623,6 +704,7 @@ typedef struct
 #endif
     tBTA_DM_PM_ACTTION          pm_mode_attempted;
     tBTA_DM_PM_ACTTION          pm_mode_failed;
+    BOOLEAN                     remove_dev_pending;
 
 } tBTA_DM_PEER_DEVICE;
 
@@ -703,6 +785,8 @@ typedef struct
     BD_ADDR                     pin_bd_addr;
     DEV_CLASS                   pin_dev_class;
     tBTA_DM_SEC_EVT             pin_evt;
+    tBTA_IO_CAP                 loc_io_caps;    /* IO Capabilities of local device */
+    tBTA_AUTH_REQ               rmt_io_caps;    /* IO Capabilities of remote device */
     UINT32          num_val;        /* the numeric value for comparison. If just_works, do not show this number to UI */
     BOOLEAN         just_works;     /* TRUE, if "Just Works" association model */
 #if ( BTM_EIR_SERVER_INCLUDED == TRUE )&&( BTA_EIR_CANNED_UUID_LIST != TRUE )
@@ -716,6 +800,7 @@ typedef struct
 #endif
 
     tBTA_DM_ENCRYPT_CBACK      *p_encrypt_cback;
+    tBTA_DM_REM_NAME_CBACK     *p_rem_name_cback;
     tBTA_DM_BLE_SEC_ACT         sec_act;
     TIMER_LIST_ENT              switch_delay_timer;
 
@@ -738,7 +823,7 @@ typedef struct
     UINT16                 state;
     BD_ADDR                peer_bdaddr;
     BOOLEAN                name_discover_done;
-    char                   peer_name[BD_NAME_LEN];
+    BD_NAME                peer_name;
     TIMER_LIST_ENT         search_timer;
     UINT8                  service_index;
     tBTA_DM_MSG          * p_search_queue;   /* search or discover commands during search cancel stored here */
@@ -749,6 +834,7 @@ typedef struct
     BOOLEAN                sdp_search;
 
 #if ((defined BLE_INCLUDED) && (BLE_INCLUDED == TRUE))
+    tBTA_DM_SEARCH_CBACK * p_scan_cback;
 #if ((defined BTA_GATT_INCLUDED) && (BTA_GATT_INCLUDED == TRUE))
     tBTA_GATTC_IF          client_if;
     UINT8                  num_uuid;
@@ -917,6 +1003,8 @@ extern void bta_dm_tx_inqpower(tBTA_DM_MSG *p_data);
 extern void bta_dm_acl_change(tBTA_DM_MSG *p_data);
 extern void bta_dm_add_device (tBTA_DM_MSG *p_data);
 extern void bta_dm_remove_device (tBTA_DM_MSG *p_data);
+extern void bta_dm_remote_name(tBTA_DM_MSG *p_data);
+extern void bta_dm_close_acl(tBTA_DM_MSG *p_data);
 
 
 extern void bta_dm_pm_btm_status(tBTA_DM_MSG *p_data);
@@ -931,6 +1019,7 @@ extern void bta_dm_security_grant (tBTA_DM_MSG *p_data);
 extern void bta_dm_ble_set_bg_conn_type (tBTA_DM_MSG *p_data);
 extern void bta_dm_ble_set_conn_params (tBTA_DM_MSG *p_data);
 extern void bta_dm_ble_set_scan_params (tBTA_DM_MSG *p_data);
+extern void bta_dm_ble_observe (tBTA_DM_MSG *p_data);
 #endif
 extern void bta_dm_set_encryption(tBTA_DM_MSG *p_data);
 extern void bta_dm_confirm(tBTA_DM_MSG *p_data);
@@ -984,6 +1073,6 @@ extern void bta_dm_disable_test_mode(tBTA_DM_MSG *p_data);
 extern void bta_dm_execute_callback(tBTA_DM_MSG *p_data);
 
 extern void bta_dm_set_afh_channel_assesment(tBTA_DM_MSG *p_data);
-
+extern void bta_dm_hci_raw_command(tBTA_DM_MSG *p_data);
 #endif /* BTA_DM_INT_H */
 

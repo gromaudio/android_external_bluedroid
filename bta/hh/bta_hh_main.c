@@ -96,8 +96,8 @@ const UINT8 bta_hh_st_idle[][BTA_HH_NUM_COLS] =
 /* BTA_HH_API_WRITE_DEV_EVT */    {BTA_HH_IGNORE,        BTA_HH_IDLE_ST    },
 /* BTA_HH_API_GET_DSCP_EVT  */    {BTA_HH_IGNORE,        BTA_HH_IDLE_ST    },
 /* BTA_HH_API_MAINT_DEV_EVT */    {BTA_HH_MAINT_DEV_ACT, BTA_HH_IDLE_ST    },
-/* BTA_HH_OPEN_CMPL_EVT        */    {BTA_HH_IGNORE,         BTA_HH_IDLE_ST    }
-
+/* BTA_HH_OPEN_CMPL_EVT        */    {BTA_HH_IGNORE,         BTA_HH_IDLE_ST    },
+/* BTA_HH_INT_PERFORM_SDP_EVT      */    {BTA_HH_START_SDP,     BTA_HH_IDLE_ST },
 };
 
 
@@ -115,7 +115,8 @@ const UINT8 bta_hh_st_w4_conn[][BTA_HH_NUM_COLS] =
 /* BTA_HH_API_WRITE_DEV_EVT */    {BTA_HH_IGNORE  ,      BTA_HH_W4_CONN_ST },
 /* BTA_HH_API_GET_DSCP_EVT  */    {BTA_HH_IGNORE,        BTA_HH_W4_CONN_ST },
 /* BTA_HH_API_MAINT_DEV_EVT */    {BTA_HH_MAINT_DEV_ACT, BTA_HH_IDLE_ST    },
-/* BTA_HH_OPEN_CMPL_EVT        */    {BTA_HH_OPEN_CMPL_ACT, BTA_HH_CONN_ST    }
+/* BTA_HH_OPEN_CMPL_EVT        */    {BTA_HH_OPEN_CMPL_ACT, BTA_HH_CONN_ST    },
+/* BTA_HH_INT_PERFORM_SDP_EVT      */    {BTA_HH_IGNORE,     BTA_HH_W4_CONN_ST },
 };
 
 
@@ -133,7 +134,8 @@ const UINT8 bta_hh_st_connected[][BTA_HH_NUM_COLS] =
 /* BTA_HH_API_WRITE_DEV_EVT */    {BTA_HH_WRITE_DEV_ACT, BTA_HH_CONN_ST    },
 /* BTA_HH_API_GET_DSCP_EVT  */    {BTA_HH_GET_DSCP_ACT,  BTA_HH_CONN_ST    },
 /* BTA_HH_API_MAINT_DEV_EVT */    {BTA_HH_MAINT_DEV_ACT, BTA_HH_CONN_ST    },
-/* BTA_HH_OPEN_CMPL_EVT        */    {BTA_HH_IGNORE,         BTA_HH_CONN_ST    }
+/* BTA_HH_OPEN_CMPL_EVT        */    {BTA_HH_IGNORE,         BTA_HH_CONN_ST    },
+/* BTA_HH_INT_PERFORM_SDP_EVT      */    {BTA_HH_IGNORE,     BTA_HH_CONN_ST },
 };
 
 /* type for state table */
@@ -233,6 +235,14 @@ void bta_hh_sm_execute(tBTA_HH_DEV_CB *p_cb, UINT16 event, tBTA_HH_DATA * p_data
                     cback_data.hs_data.status = BTA_HH_ERR_HDL;
                     /* hs_data.rsp_data will be all zero, which is not valid value */
                 }
+                else if (p_data->api_sndcmd.t_type == HID_TRANS_CONTROL &&
+                         p_data->api_sndcmd.param == BTA_HH_CTRL_VIRTUAL_CABLE_UNPLUG)
+                {
+                    cback_data.status = BTA_HH_ERR_HDL;
+                    cback_event = BTA_HH_VC_UNPLUG_EVT;
+                }
+                else
+                    cback_event = 0;
                 break;
 
             case BTA_HH_API_CLOSE_EVT:
@@ -240,6 +250,12 @@ void bta_hh_sm_execute(tBTA_HH_DEV_CB *p_cb, UINT16 event, tBTA_HH_DATA * p_data
 
                 cback_data.dev_status.status = BTA_HH_ERR_HDL;
                 cback_data.dev_status.handle = (UINT8)p_data->api_sndcmd.hdr.layer_specific;
+                break;
+
+            case BTA_HH_INT_PERFORM_SDP_EVT:
+                /* Inform stack back, to send security block */
+                APPL_TRACE_ERROR0("no space available for allocating more device");
+                HID_HostSendL2capConnectRsp(BTA_HH_ERR_DB_FULL);
                 break;
 
             default:
@@ -297,7 +313,7 @@ void bta_hh_sm_execute(tBTA_HH_DEV_CB *p_cb, UINT16 event, tBTA_HH_DATA * p_data
 *******************************************************************************/
 BOOLEAN bta_hh_hdl_event(BT_HDR *p_msg)
 {
-    UINT8           index = BTA_HH_MAX_KNOWN;
+    UINT8           index = BTA_HH_IDX_INVALID;
     tBTA_HH_DEV_CB *p_cb = NULL;
 
     switch (p_msg->event)
@@ -321,6 +337,15 @@ BOOLEAN bta_hh_hdl_event(BT_HDR *p_msg)
             {
                 index = bta_hh_find_cb(((tBTA_HH_API_CONN *)p_msg)->bd_addr);
             }
+            else if (p_msg->event == BTA_HH_INT_PERFORM_SDP_EVT)
+            {
+                BD_ADDR *bda = ((tBTA_HH_CBACK_DATA *)p_msg)->p_data;
+                bdcpy(((tBTA_HH_DATA *) p_msg)->api_conn.bd_addr, *bda);
+                ((tBTA_HH_DATA *) p_msg)->api_conn.sec_mask = 0;
+                ((tBTA_HH_DATA *) p_msg)->api_conn.mode = BTA_HH_PROTO_RPT_MODE;
+                ((tBTA_HH_DATA *) p_msg)->api_conn.incoming_conn = TRUE;
+                index = bta_hh_find_cb(*bda);
+            }
             else if (p_msg->event == BTA_HH_API_MAINT_DEV_EVT)
             {
                 /* if add device */
@@ -330,24 +355,24 @@ BOOLEAN bta_hh_hdl_event(BT_HDR *p_msg)
                 }
                 else /* else remove device by handle */
                 {
-                    index = bta_hh_cb.cb_index[p_msg->layer_specific];
+                    index = bta_hh_dev_handle_to_cb_idx((UINT8)p_msg->layer_specific);
 // btla-specific ++
                     /* If BT disable is done while the HID device is connected and Link_Key uses unauthenticated combination
                       * then we can get into a situation where remove_bonding is called with the index set to 0 (without getting
                       * cleaned up). Only when VIRTUAL_UNPLUG is called do we cleanup the index and make it MAX_KNOWN.
                       * So if REMOVE_DEVICE is called and in_use is FALSE then we should treat this as a NULL p_cb. Hence we
-                      * force the index to be MAX_KNOWN
+                      * force the index to be IDX_INVALID
                       */
                     if (bta_hh_cb.kdev[index].in_use == FALSE) {
-                           index = BTA_HH_MAX_KNOWN;
+                           index = BTA_HH_IDX_INVALID;
                     }
 // btla-specific --
                 }
             }
-            else if (p_msg->layer_specific < BTA_HH_MAX_KNOWN )
-                index = bta_hh_cb.cb_index[p_msg->layer_specific];
+            else
+                index = bta_hh_dev_handle_to_cb_idx((UINT8)p_msg->layer_specific);
 
-            if (index != BTA_HH_MAX_KNOWN)
+            if (index != BTA_HH_IDX_INVALID)
                 p_cb = &bta_hh_cb.kdev[index];
 
 #if BTA_HH_DEBUG
@@ -405,6 +430,8 @@ static char *bta_hh_evt_code(tBTA_HH_INT_EVT evt_code)
         return "BTA_HH_API_GET_DSCP_EVT";
     case BTA_HH_OPEN_CMPL_EVT:
         return "BTA_HH_OPEN_CMPL_EVT";
+    case BTA_HH_INT_PERFORM_SDP_EVT:
+        return "BTA_HH_INT_PERFORM_SDP_EVT";
     default:
         return "unknown HID Host event code";
     }

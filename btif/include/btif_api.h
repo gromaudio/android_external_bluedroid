@@ -325,4 +325,26 @@ bt_status_t btif_dut_mode_configure(uint8_t enable);
 *******************************************************************************/
 bt_status_t btif_dut_mode_send(uint16_t opcode, uint8_t *buf, uint8_t len);
 
+/*******************************************************************************
+**
+** Function         btif_le_test_mode
+**
+** Description     Sends a HCI BLE Test command to the Controller
+**
+** Returns          BT_STATUS_SUCCESS on success
+**
+*******************************************************************************/
+bt_status_t btif_le_test_mode(uint16_t opcode, uint8_t *buf, uint8_t len);
+
+/*******************************************************************************
+**
+** Function         btif_dm_cancel_hid_bond
+**
+** Description      Cancels bonding to HID device if in progress
+**
+** Returns          bt_status_t
+**
+*******************************************************************************/
+bt_status_t btif_dm_cancel_hid_bond(const bt_bdaddr_t *bd_addr);
+
 #endif /* BTIF_API_H */

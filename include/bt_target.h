@@ -1,5 +1,7 @@
 /******************************************************************************
  *
+ *  Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ *  Not a Contribution.
  *  Copyright (C) 1999-2012 Broadcom Corporation
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,6 +35,9 @@
 #define BTIF_HFAG_SERVICE_NAME  ("Handsfree Gateway")
 #endif
 
+#ifndef BTIF_HF_CLIENT_SERVICE_NAME
+#define BTIF_HF_CLIENT_SERVICE_NAME  ("Handsfree")
+#endif
 
 #ifdef BUILDCFG
 
@@ -54,6 +59,11 @@
 
 
 //------------------Added from Bluedroid buildcfg.h---------------------
+/* This feature is used to update any QCOM related changes in the stack*/
+#ifndef BLUETOOTH_QCOM_SW
+#define BLUETOOTH_QCOM_SW FALSE
+#endif
+
 #ifndef I2SPCM_SLAVE_BRCM
 #define I2SPCM_SLAVE_BRCM FALSE
 #endif
@@ -264,7 +274,7 @@
 #endif
 
 #ifndef BTA_GATT_INCLUDED
-#define BTA_GATT_INCLUDED FALSE
+#define BTA_GATT_INCLUDED TRUE
 #endif
 
 #ifndef BTA_DISABLE_DELAY
@@ -333,10 +343,6 @@
 
 #ifndef BTA_AG_SCO_PKT_TYPES
 #define BTA_AG_SCO_PKT_TYPES  (BTM_SCO_LINK_ONLY_MASK | BTM_SCO_PKT_TYPES_MASK_EV3 |  BTM_SCO_PKT_TYPES_MASK_NO_3_EV3 | BTM_SCO_PKT_TYPES_MASK_NO_2_EV5 | BTM_SCO_PKT_TYPES_MASK_NO_3_EV5)
-#endif
-
-#ifndef BTA_AV_MAX_A2DP_MTU
-#define BTA_AV_MAX_A2DP_MTU  668
 #endif
 
 #ifndef BTA_AV_RET_TOUT
@@ -554,14 +560,15 @@
 #define L2CAP_FCR_RX_POOL_ID        HCI_ACL_POOL_ID
 #endif
 
+/* Number of ACL buffers to assign to LE
+   if the HCI buffer pool is shared with BR/EDR */
+#ifndef L2C_DEF_NUM_BLE_BUF_SHARED
+#define L2C_DEF_NUM_BLE_BUF_SHARED      1
+#endif
+
 /* Used by BTM when it sends HCI commands to the controller. */
 #ifndef BTM_CMD_POOL_ID
 #define BTM_CMD_POOL_ID             GKI_POOL_ID_2
-#endif
-
-/* Sends TCS messages. */
-#ifndef TCS_MSG_POOL_ID
-#define TCS_MSG_POOL_ID             GKI_POOL_ID_2
 #endif
 
 #ifndef OBX_CMD_POOL_SIZE
@@ -581,11 +588,6 @@
 #define CTP_SDP_DB_POOL_ID          GKI_POOL_ID_3
 #endif
 
-/* Used for CTP data exchange feature. */
-#ifndef CTP_DATA_EXCHG_POOL_ID
-#define CTP_DATA_EXCHG_POOL_ID      GKI_POOL_ID_2
-#endif
-
 /* Used to send data to L2CAP. */
 #ifndef GAP_DATA_POOL_ID
 #define GAP_DATA_POOL_ID            GKI_POOL_ID_3
@@ -599,24 +601,6 @@
 #ifndef SPP_DB_SIZE
 #define SPP_DB_SIZE                 GKI_BUF3_SIZE
 #endif
-
-/* HCRP protocol and internal commands. */
-#ifndef HCRP_CMD_POOL_ID
-#define HCRP_CMD_POOL_ID            GKI_POOL_ID_2
-#endif
-
-#ifndef HCRP_CMD_POOL_SIZE
-#define HCRP_CMD_POOL_SIZE          GKI_BUF2_SIZE
-#endif
-
-#ifndef BIP_EVT_POOL_SIZE
-#define BIP_EVT_POOL_SIZE           GKI_BUF3_SIZE
-#endif
-
-#ifndef BIP_DB_SIZE
-#define BIP_DB_SIZE                 GKI_BUF3_SIZE
-#endif
-
 
 /* BNEP data and protocol messages. */
 #ifndef BNEP_POOL_ID
@@ -871,9 +855,24 @@ and USER_HW_DISABLE_API macros */
 #define BTM_SCO_HCI_INCLUDED            FALSE       /* TRUE includes SCO over HCI code */
 #endif
 
+#if (BLUETOOTH_QCOM_SW == TRUE) /* Enable WBS only under this flag.*/
+#define BTM_WBS_INCLUDED            TRUE
+#define BTC_INCLUDED                TRUE
+#define BLUETOOTH_QCOM_LE_INTL_SCAN TRUE
+#else
 /* Includes WBS if TRUE */
 #ifndef BTM_WBS_INCLUDED
 #define BTM_WBS_INCLUDED            FALSE       /* TRUE includes WBS code */
+#endif
+/* This feature is used to eanble QCOM interleaved scan*/
+#ifndef BLUETOOTH_QCOM_LE_INTL_SCAN
+#define BLUETOOTH_QCOM_LE_INTL_SCAN FALSE
+#endif
+/* BTC */
+#ifndef BTC_INCLUDED
+#define BTC_INCLUDED FALSE
+#endif
+
 #endif
 
 /* Includes PCM2 support if TRUE */
@@ -1249,7 +1248,7 @@ and USER_HW_DISABLE_API macros */
 
 /* The maximum number of simultaneous channels that L2CAP can support. */
 #ifndef MAX_L2CAP_CHANNELS
-#define MAX_L2CAP_CHANNELS          10
+#define MAX_L2CAP_CHANNELS          16
 #endif
 
 /* The maximum number of simultaneous applications that can register with L2CAP. */
@@ -1422,7 +1421,7 @@ and USER_HW_DISABLE_API macros */
 ******************************************************************************/
 
 #ifndef BLE_INCLUDED
-#define BLE_INCLUDED            FALSE
+#define BLE_INCLUDED            TRUE
 #endif
 
 #ifndef LOCAL_BLE_CONTROLLER_ID
@@ -1435,19 +1434,19 @@ and USER_HW_DISABLE_API macros */
 **
 ******************************************************************************/
 #ifndef ATT_INCLUDED
-#define ATT_INCLUDED         FALSE
+#define ATT_INCLUDED         TRUE
 #endif
 
 #ifndef ATT_DEBUG
-#define ATT_DEBUG           FALSE
+#define ATT_DEBUG           TRUE
 #endif
 
 #ifndef GATT_SERVER_ENABLED
-#define GATT_SERVER_ENABLED          FALSE
+#define GATT_SERVER_ENABLED          TRUE
 #endif
 
 #ifndef GATT_CLIENT_ENABLED
-#define GATT_CLIENT_ENABLED          FALSE
+#define GATT_CLIENT_ENABLED          TRUE
 #endif
 
 #ifndef GATT_MAX_SR_PROFILES
@@ -1483,11 +1482,11 @@ and USER_HW_DISABLE_API macros */
 **
 ******************************************************************************/
 #ifndef SMP_INCLUDED
-#define SMP_INCLUDED         FALSE
+#define SMP_INCLUDED         TRUE
 #endif
 
 #ifndef SMP_DEBUG
-#define SMP_DEBUG            FALSE
+#define SMP_DEBUG            TRUE
 #endif
 
 #ifndef SMP_DEFAULT_AUTH_REQ
@@ -2183,6 +2182,11 @@ Range: Minimum 12000 (12 secs) on BR/EDR when supporting PBF.
 #define PAN_NAP_SECURITY_LEVEL           0
 #endif
 
+/*This ensures that PANU Service record will not be advertised on SDP */
+#ifndef PAN_ALWAYS_NAP_NO_PANU_ON_SDP
+#define PAN_ALWAYS_NAP_NO_PANU_ON_SDP TRUE
+#endif
+
 
 
 
@@ -2193,7 +2197,7 @@ Range: Minimum 12000 (12 secs) on BR/EDR when supporting PBF.
 ******************************************************************************/
 
 #ifndef GAP_INCLUDED
-#define GAP_INCLUDED                FALSE
+#define GAP_INCLUDED                TRUE
 #endif
 
 /* This is set to enable use of GAP L2CAP connections. */
@@ -2863,7 +2867,7 @@ Range: Minimum 12000 (12 secs) on BR/EDR when supporting PBF.
 #endif
 
 #ifndef HID_HOST_MAX_CONN_RETRY
-#define HID_HOST_MAX_CONN_RETRY     (3)
+#define HID_HOST_MAX_CONN_RETRY     (1)
 #endif
 
 #ifndef HID_HOST_REPAGE_WIN
@@ -3505,6 +3509,10 @@ Range: Minimum 12000 (12 secs) when supporting PBF.
 #define AVRC_INCLUDED               TRUE
 #endif
 
+#ifndef AVRC_METADATA_INCLUDED
+#define AVRC_METADATA_INCLUDED      TRUE
+#endif
+
 /******************************************************************************
 **
 ** MCAP
@@ -3526,7 +3534,7 @@ Range: Minimum 12000 (12 secs) when supporting PBF.
 
 /* The maximum number of registered MCAP instances. */
 #ifndef MCA_NUM_REGS
-#define MCA_NUM_REGS    3
+#define MCA_NUM_REGS    12
 #endif
 
 /* The maximum number of control channels (to difference devices) per registered MCAP instances. */
@@ -3536,7 +3544,7 @@ Range: Minimum 12000 (12 secs) when supporting PBF.
 
 /* The maximum number of MDEP (including HDP echo) per registered MCAP instances. */
 #ifndef MCA_NUM_DEPS
-#define MCA_NUM_DEPS    3
+#define MCA_NUM_DEPS    13
 #endif
 
 /* The maximum number of MDL link per control channel. */
@@ -3751,9 +3759,6 @@ The maximum number of payload octets that the local device can receive in a sing
 
 #define L2CAP_FEATURE_REQ_ID      73
 #define L2CAP_FEATURE_RSP_ID     173
-
-
-#define L2CAP_ENHANCED_FEATURES   0
 
 
 /******************************************************************************

@@ -1,5 +1,7 @@
 /******************************************************************************
  *
+ *  Copyright (c) 2013, The Linux Foundation. All rights reserved.
+ *  Not a Contribution.
  *  Copyright (C) 2009-2012 Broadcom Corporation
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
@@ -30,11 +32,15 @@
 
 #include <hardware/bluetooth.h>
 #include <hardware/bt_hf.h>
+#include <hardware/bt_hf_client.h>
 #include <hardware/bt_av.h>
 #include <hardware/bt_sock.h>
 #include <hardware/bt_hh.h>
 #include <hardware/bt_hl.h>
 #include <hardware/bt_pan.h>
+#include <hardware/bt_mce.h>
+#include <hardware/bt_gatt.h>
+#include <hardware/bt_rc.h>
 
 #define LOG_NDDEBUG 0
 #define LOG_TAG "bluedroid"
@@ -70,6 +76,8 @@ bt_callbacks_t *bt_hal_cbacks = NULL;
 
 /* handsfree profile */
 extern bthf_interface_t *btif_hf_get_interface();
+/* handsfree profile - client */
+extern bthf_client_interface_t *btif_hf_client_get_interface();
 /* advanced audio profile */
 extern btav_interface_t *btif_av_get_interface();
 /*rfc l2cap*/
@@ -80,6 +88,12 @@ extern bthh_interface_t *btif_hh_get_interface();
 extern bthl_interface_t *btif_hl_get_interface();
 /*pan*/
 extern btpan_interface_t *btif_pan_get_interface();
+/*map client*/
+extern btmce_interface_t *btif_mce_get_interface();
+/* gatt */
+extern btgatt_interface_t *btif_gatt_get_interface();
+/* avrc */
+extern btrc_interface_t *btif_rc_get_interface();
 
 /************************************************************************************
 **  Functions
@@ -305,6 +319,9 @@ static const void* get_profile_interface (const char *profile_id)
     if (is_profile(profile_id, BT_PROFILE_HANDSFREE_ID))
         return btif_hf_get_interface();
 
+    if (is_profile(profile_id, BT_PROFILE_HANDSFREE_CLIENT_ID))
+        return btif_hf_client_get_interface();
+
     if (is_profile(profile_id, BT_PROFILE_SOCKETS_ID))
         return btif_sock_get_interface();
 
@@ -319,6 +336,18 @@ static const void* get_profile_interface (const char *profile_id)
 
     if (is_profile(profile_id, BT_PROFILE_HEALTH_ID))
         return btif_hl_get_interface();
+
+    if (is_profile(profile_id, BT_PROFILE_MAP_CLIENT_ID))
+        return btif_mce_get_interface();
+
+#if BTA_GATT_INCLUDED == TRUE
+    if (is_profile(profile_id, BT_PROFILE_GATT_ID))
+        return btif_gatt_get_interface();
+#endif
+
+    if (is_profile(profile_id, BT_PROFILE_AV_RC_ID))
+        return btif_rc_get_interface();
+
     return NULL;
 }
 
@@ -343,8 +372,22 @@ int dut_mode_send(uint16_t opcode, uint8_t* buf, uint8_t len)
 
     return btif_dut_mode_send(opcode, buf, len);
 }
+
+#if BLE_INCLUDED == TRUE
+int le_test_mode(uint16_t opcode, uint8_t* buf, uint8_t len)
+{
+    ALOGI("le_test_mode");
+
+    /* sanity check */
+    if (interface_ready() == FALSE)
+        return BT_STATUS_NOT_READY;
+
+    return btif_le_test_mode(opcode, buf, len);
+}
+#endif
+
 static const bt_interface_t bluetoothInterface = {
-    sizeof(bt_interface_t),
+    sizeof(bluetoothInterface),
     init,
     enable,
     disable,
@@ -366,7 +409,12 @@ static const bt_interface_t bluetoothInterface = {
     ssp_reply,
     get_profile_interface,
     dut_mode_configure,
-    dut_mode_send
+    dut_mode_send,
+#if BLE_INCLUDED == TRUE
+    le_test_mode
+#else
+    NULL
+#endif
 };
 
 const bt_interface_t* bluetooth__get_bluetooth_interface ()

@@ -245,6 +245,7 @@ void avdt_scb_hdl_pkt_no_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
     UINT16  ex_len;
     UINT8   pad_len = 0;
 
+    AVDT_TRACE_DEBUG0("Enter avdt_scb_hdl_pkt_no_frag");
     p = p_start = (UINT8 *)(p_data->p_pkt + 1) + p_data->p_pkt->offset;
 
     /* parse media packet header */
@@ -289,6 +290,7 @@ void avdt_scb_hdl_pkt_no_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
 
         if (p_scb->cs.p_data_cback != NULL)
         {
+            AVDT_TRACE_DEBUG0("p_scb->cs.p_data_cback != NULL");
             /* report sequence number */
             p_data->p_pkt->layer_specific = seq;
             (*p_scb->cs.p_data_cback)(avdt_scb_to_hdl(p_scb), p_data->p_pkt,
@@ -301,6 +303,7 @@ void avdt_scb_hdl_pkt_no_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
              && (p_scb->p_media_buf != NULL)
              && (p_scb->media_buf_len > p_data->p_pkt->len))
             {
+                AVDT_TRACE_DEBUG0("p_scb->cs.p_media_cback != NULL");
                 /* media buffer enough length is assigned by application. Lets use it*/
                 memcpy(p_scb->p_media_buf,(UINT8*)(p_data->p_pkt + 1) + p_data->p_pkt->offset,
                     p_data->p_pkt->len);
@@ -421,6 +424,7 @@ void avdt_scb_hdl_pkt_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
     UINT32  payload_len; /* payload length */
     UINT16  frag_len; /* fragment length */
 
+    AVDT_TRACE_DEBUG0("Enter avdt_scb_hdl_pkt_frag");
     p = (UINT8 *)(p_data->p_pkt + 1) + p_data->p_pkt->offset;
     p_end = p + p_data->p_pkt->len;
     /* parse all fragments */
@@ -607,6 +611,7 @@ void avdt_scb_hdl_pkt_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
             /* send total media packet up */
             if (p_scb->cs.p_media_cback != NULL)
             {
+                AVDT_TRACE_DEBUG0("p_scb->cs.p_media_cback != NULL");
                 (*p_scb->cs.p_media_cback)(avdt_scb_to_hdl(p_scb), p_payload,
                                            payload_len, time_stamp, seq, m_pt, marker);
             }
@@ -1213,19 +1218,22 @@ void avdt_scb_hdl_write_req_no_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
     }
 
     /* build a media packet */
+    /* Add RTP header if required */
+    if ( !(p_data->apiwrite.opt & AVDT_DATA_OPT_NO_RTP) )
+    {
+        ssrc = avdt_scb_gen_ssrc(p_scb);
 
-    ssrc = avdt_scb_gen_ssrc(p_scb);
+        p_data->apiwrite.p_buf->len += AVDT_MEDIA_HDR_SIZE;
+        p_data->apiwrite.p_buf->offset -= AVDT_MEDIA_HDR_SIZE;
 
-    p_data->apiwrite.p_buf->len += AVDT_MEDIA_HDR_SIZE;
-    p_data->apiwrite.p_buf->offset -= AVDT_MEDIA_HDR_SIZE;
+        p = (UINT8 *)(p_data->apiwrite.p_buf + 1) + p_data->apiwrite.p_buf->offset;
 
-    p = (UINT8 *)(p_data->apiwrite.p_buf + 1) + p_data->apiwrite.p_buf->offset;
-
-    UINT8_TO_BE_STREAM(p, AVDT_MEDIA_OCTET1);
-    UINT8_TO_BE_STREAM(p, p_data->apiwrite.m_pt);
-    UINT16_TO_BE_STREAM(p, p_scb->media_seq);
-    UINT32_TO_BE_STREAM(p, p_data->apiwrite.time_stamp);
-    UINT32_TO_BE_STREAM(p, ssrc);
+        UINT8_TO_BE_STREAM(p, AVDT_MEDIA_OCTET1);
+        UINT8_TO_BE_STREAM(p, p_data->apiwrite.m_pt);
+        UINT16_TO_BE_STREAM(p, p_scb->media_seq);
+        UINT32_TO_BE_STREAM(p, p_data->apiwrite.time_stamp);
+        UINT32_TO_BE_STREAM(p, ssrc);
+    }
 
     p_scb->media_seq++;
 

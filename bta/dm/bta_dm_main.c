@@ -58,6 +58,7 @@ const tBTA_DM_ACTION bta_dm_action[] =
     bta_dm_tx_inqpower,       /* 7  BTA_DM_API_SIG_STRENGTH_EVT */
     bta_dm_acl_change,        /* 8  BTA_DM_ACL_CHANGE_EVT */
     bta_dm_add_device,        /* 9  BTA_DM_API_ADD_DEVICE_EVT */
+    bta_dm_close_acl,         /* 10 BTA_DM_API_ADD_DEVICE_EVT */
 
     /* security API events */
     bta_dm_bond,              /* 10  BTA_DM_API_BOND_EVT */
@@ -85,6 +86,7 @@ const tBTA_DM_ACTION bta_dm_action[] =
 #endif /* BTM_OOB_INCLUDED */
 
     bta_dm_remove_device,      /*  BTA_DM_API_REMOVE_DEVICE_EVT */
+    bta_dm_remote_name,         /* BTA_DM_API_REM_NAME_EVT*/
 
 #if BLE_INCLUDED == TRUE
     bta_dm_add_blekey,          /*  BTA_DM_API_ADD_BLEKEY_EVT           */
@@ -94,6 +96,7 @@ const tBTA_DM_ACTION bta_dm_action[] =
     bta_dm_ble_set_bg_conn_type,
     bta_dm_ble_set_conn_params,      /* BTA_DM_API_BLE_CONN_PARAM_EVT */
     bta_dm_ble_set_scan_params,      /* BTA_DM_API_BLE_SCAN_PARAM_EVT */
+    bta_dm_ble_observe,
 #endif
 
 #if ( BTM_EIR_SERVER_INCLUDED == TRUE )&&( BTA_EIR_CANNED_UUID_LIST != TRUE )&&(BTA_EIR_SERVER_NUM_CUSTOM_UUID > 0)
@@ -106,7 +109,8 @@ const tBTA_DM_ACTION bta_dm_action[] =
     bta_dm_enable_test_mode,    /*  BTA_DM_API_ENABLE_TEST_MODE_EVT     */
     bta_dm_disable_test_mode,   /*  BTA_DM_API_DISABLE_TEST_MODE_EVT    */
     bta_dm_execute_callback,     /*  BTA_DM_API_EXECUTE_CBACK_EVT        */
-    bta_dm_set_afh_channel_assesment      /* BTA_DM_API_SET_AFH_CHANNEL_ASSESMENT_EVT */
+    bta_dm_set_afh_channel_assesment,     /* BTA_DM_API_SET_AFH_CHANNEL_ASSESMENT_EVT */
+    bta_dm_hci_raw_command    /* BTA_DM_API_HCI_RAW_COMMAND_EVT */
 };
 
 
@@ -211,8 +215,8 @@ const UINT8 bta_dm_search_search_cancelling_st_table[][BTA_DM_SEARCH_NUM_COLS] =
 /* INQUIRY_CMPL */          {BTA_DM_SEARCH_CANCEL_CMPL,         BTA_DM_SEARCH_IGNORE,          BTA_DM_SEARCH_IDLE},
 /* REMT_NAME_EVT */         {BTA_DM_SEARCH_CANCEL_TRANSAC_CMPL, BTA_DM_SEARCH_CANCEL_CMPL,     BTA_DM_SEARCH_IDLE},
 /* SDP_RESULT_EVT */        {BTA_DM_SEARCH_CANCEL_TRANSAC_CMPL, BTA_DM_SEARCH_CANCEL_CMPL,     BTA_DM_SEARCH_IDLE},
-/* SEARCH_CMPL_EVT */       {BTA_DM_SEARCH_CANCEL_CMPL,         BTA_DM_SEARCH_IGNORE,          BTA_DM_SEARCH_IDLE},
-/* DISCV_RES_EVT */         {BTA_DM_SEARCH_CANCEL_CMPL,         BTA_DM_SEARCH_IGNORE,          BTA_DM_SEARCH_IDLE},
+/* SEARCH_CMPL_EVT */       {BTA_DM_SEARCH_CANCEL_TRANSAC_CMPL, BTA_DM_SEARCH_CANCEL_CMPL,     BTA_DM_SEARCH_IDLE},
+/* DISCV_RES_EVT */         {BTA_DM_SEARCH_CANCEL_TRANSAC_CMPL, BTA_DM_SEARCH_CANCEL_CMPL,     BTA_DM_SEARCH_IDLE},
 /* API_DI_DISCOVER_EVT */   {BTA_DM_SEARCH_IGNORE,              BTA_DM_SEARCH_IGNORE,          BTA_DM_SEARCH_CANCELLING}
 
 

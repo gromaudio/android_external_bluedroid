@@ -212,14 +212,6 @@ static int is_usb_match_idtable (struct bt_usb_device *id, struct libusb_device_
 {
     int ret = TRUE;
 
-    ALOGE("Match: %02X %02X %02X <-> %02X %02X %02X",   id->bDevClass,
-                                                        id->bDevSubClass,
-                                                        id->bDevProtocol,
-                                                        libusb_le16_to_cpu(desc->bDeviceClass),
-                                                        libusb_le16_to_cpu(desc->bDeviceSubClass),
-                                                        libusb_le16_to_cpu(desc->bDeviceProtocol));
-
-
     ret = ((id->bDevClass != libusb_le16_to_cpu(desc->bDeviceClass)) ? FALSE :
            (id->bDevSubClass != libusb_le16_to_cpu(desc->bDeviceSubClass)) ? FALSE :
            (id->bDevProtocol != libusb_le16_to_cpu(desc->bDeviceProtocol)) ? FALSE : TRUE);
@@ -284,11 +276,8 @@ static int is_btusb_device (struct libusb_device *dev)
     {
         if (is_usb_match_idtable (id, &desc) == TRUE)
         {
-            ALOGD("BTUSB device: %02X %02X %02X", id->bDevClass, 
-                                                  id->bDevSubClass,
-                                                  id->bDevProtocol);
-            match = 1;
-            break;
+                match = 1;
+                break;
         }
     }
 
@@ -300,7 +289,7 @@ static int is_btusb_device (struct libusb_device *dev)
     r = libusb_get_config_descriptor(dev, 0, &cfg_desc);
     if (r < 0)
     {
-        ALOGE("libusb_get_config_descriptor  %x:%x failed ....%d\n",
+        USBERR("libusb_get_config_descriptor  %x:%x failed ....%d\n", \
                desc.idVendor, desc.idProduct, r);
         return FALSE;
     }
@@ -356,16 +345,6 @@ static libusb_device_handle *libusb_open_bt_device()
     }
 
     libusb_free_device_list(devs, 1);
-
-    // Some usb BT dongles already have kernel driver atached.
-    // We have to detach it first.
-    r = libusb_detach_kernel_driver(handle, 0);
-    if (r < 0)
-    {
-        ALOGE("usb_detach_kernel_driver 0 error %d\n", r);
-        return NULL;
-    }
-
     r = libusb_claim_interface(handle, 0);
     if (r < 0)
     {
@@ -1075,6 +1054,10 @@ uint16_t usb_write(uint16_t msg_id, uint8_t *p_data, uint16_t len)
     CMD_HDR *cmd_hdr;
     static int xmit_count;
 
+    if (usb.handle == NULL) {
+        return 0;
+    }
+
     if(!(xmit_transfer = libusb_alloc_transfer(0)))
     {
         USBERR( "libusb_alloc_tranfer() failed");
@@ -1183,8 +1166,18 @@ void usb_close(void)
 ** Returns         None
 **
 *******************************************************************************/
-void usb_ioctl(usb_ioctl_op_t op, void *p_data)
+void usb_ioctl(userial_ioctl_op_t op, void *p_data)
 {
     return;
 }
+
+const tUSERIAL_IF userial_h4_func_table =
+{
+    usb_init,
+    usb_open,
+    usb_read,
+    usb_write,
+    usb_close,
+    usb_ioctl
+};
 

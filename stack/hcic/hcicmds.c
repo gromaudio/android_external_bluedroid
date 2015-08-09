@@ -1371,6 +1371,9 @@ BOOLEAN btsnd_hcic_change_name (BD_NAME name)
     UINT16_TO_STREAM (pp, HCI_CHANGE_LOCAL_NAME);
     UINT8_TO_STREAM  (pp, HCIC_PARAM_SIZE_CHANGE_NAME);
 
+    if (len > HCIC_PARAM_SIZE_CHANGE_NAME)
+        len = HCIC_PARAM_SIZE_CHANGE_NAME;
+
     ARRAY_TO_STREAM (pp, name, len);
 
     btu_hcif_send_cmd (LOCAL_BR_EDR_CONTROLLER_ID,  p);
@@ -3302,6 +3305,26 @@ BOOLEAN btsnd_hcic_write_pagescan_type (UINT8 type)
 #if !defined (LMP_TEST) && (HCI_CMD_POOL_BUF_SIZE < 268)
 #error "HCI_CMD_POOL_BUF_SIZE must be larger than 268"
 #endif
+
+
+void btsnd_hcic_raw_cmd (void *buffer, UINT16 opcode, UINT8 len,
+                                 UINT8 *p_data, void *p_cmd_cplt_cback)
+{
+    BT_HDR *p = (BT_HDR *)buffer;
+    UINT8 *pp = (UINT8 *)(p + 1);
+
+    p->len    = HCIC_PREAMBLE_SIZE + len;
+    p->offset = sizeof(void *);
+
+    *((void **)pp) = p_cmd_cplt_cback;  /* Store command complete callback in buffer */
+    pp += sizeof(void *);               /* Skip over callback pointer */
+
+    UINT16_TO_STREAM (pp, opcode);
+    UINT8_TO_STREAM  (pp, len);
+    ARRAY_TO_STREAM  (pp, p_data, len);
+
+    btu_hcif_send_cmd (LOCAL_BR_EDR_CONTROLLER_ID,  p);
+}
 
 void btsnd_hcic_vendor_spec_cmd (void *buffer, UINT16 opcode, UINT8 len,
                                  UINT8 *p_data, void *p_cmd_cplt_cback)

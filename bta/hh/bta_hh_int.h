@@ -49,6 +49,7 @@ enum
     BTA_HH_API_GET_DSCP_EVT,
     BTA_HH_API_MAINT_DEV_EVT,
     BTA_HH_OPEN_CMPL_EVT,
+    BTA_HH_INT_PERFORM_SDP_EVT,
 
     /* not handled by execute state machine */
     BTA_HH_API_ENABLE_EVT,
@@ -103,6 +104,7 @@ typedef struct
     BD_ADDR         bd_addr;
     UINT8           sec_mask;
     tBTA_HH_PROTO_MODE  mode;
+    BOOLEAN             incoming_conn;
 }tBTA_HH_API_CONN;
 
 /* internal event data from BTE HID callback */
@@ -121,6 +123,7 @@ typedef struct
     UINT16              sub_event;
     UINT8               sub_class;
     UINT8               app_id;
+    INT16               priority;
     tBTA_HH_DEV_DSCP_INFO      dscp_info;
 }tBTA_HH_MAINT_DEV;
 
@@ -154,6 +157,7 @@ typedef struct
     BOOLEAN             opened;         /* TRUE if device successfully opened HID connection */
     tBTA_HH_PROTO_MODE  mode;           /* protocol mode */
     tBTA_HH_STATE       state;          /* CB state */
+    BOOLEAN             unknown_incoming_conn;  /* is incoming connection from unknown device */
 } tBTA_HH_DEV_CB;
 
 /* key board parsing control block */
@@ -174,7 +178,7 @@ typedef struct
                                                        suppose BTA will connect
                                                        to only one keyboard at
                                                         the same time */
-    tBTA_HH_DEV_CB          kdev[BTA_HH_MAX_KNOWN]; /* device control block */
+    tBTA_HH_DEV_CB          kdev[BTA_HH_MAX_DEVICE]; /* device control block */
     tBTA_HH_DEV_CB*         p_cur;              /* current device control
                                                        block idx, used in sdp */
     UINT8                   cb_index[BTA_HH_MAX_KNOWN]; /* maintain a CB index
@@ -232,13 +236,17 @@ extern void bta_hh_add_device_to_list(tBTA_HH_DEV_CB *p_cb, UINT8 handle,
                                       tHID_DEV_DSCP_INFO *p_dscp_info,
                                       UINT8 sub_class, UINT16 max_latency, UINT16 min_tout, UINT8 app_id);
 extern void bta_hh_update_di_info(tBTA_HH_DEV_CB *p_cb, UINT16 vendor_id, UINT16 product_id,
-                           UINT16 version);
+                           UINT16 version, UINT8 flag);
+extern void bta_hh_cleanup_disable(tBTA_HH_STATUS status);
+
+extern UINT8 bta_hh_dev_handle_to_cb_idx(UINT8 dev_handle);
 
 /* action functions used outside state machine */
 extern void bta_hh_api_enable(tBTA_HH_DATA *p_data);
 extern void bta_hh_api_disable(void);
 extern void bta_hh_disc_cmpl(void);
 
+extern tBTA_HH_STATUS bta_hh_read_ssr_param(BD_ADDR bd_addr, UINT16 *p_max_ssr_lat, UINT16 *p_min_ssr_tout);
 
 #if BTA_HH_DEBUG
 extern void bta_hh_trace_dev_db(void);
