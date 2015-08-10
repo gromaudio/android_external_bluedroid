@@ -334,7 +334,7 @@ static libusb_device_handle *libusb_open_bt_device()
         r = libusb_open(dev, &handle);
         if (r < 0)
         {
-            ALOGE("found USB BT device failed to open .....\n");
+            ALOGE("found USB BT device failed to open ..... %d\n", r);
             return NULL;
         }
     }

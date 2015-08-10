@@ -331,6 +331,8 @@ static int add_maps_sdp(const char* p_service_name, int scn)
     } else if (!strncmp(p_service_name, "Email Message Access", strlen("Email Message Access"))) {
         p_bta_maps_cfg = &bta_maps_cfg_email;
         APPL_TRACE_DEBUG1("add_maps_sdp for: %s", p_service_name);
+    } else {
+        p_bta_maps_cfg = &bta_maps_cfg_sms;
     }
     APPL_TRACE_DEBUG2("add_maps_sdd:scn %d, service name %s", scn, p_service_name);
 
