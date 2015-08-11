@@ -15,6 +15,10 @@ ifneq ($(call is-board-platform-in-list,msm8960 msm8930 apq8064),true)
  endif
 endif
 
+ifeq ($(BLUETOOTH_A2DP_SINK),true)
+  bdroid_CFLAGS += -DA2DP_SINK
+endif
+
 include $(call all-subdir-makefiles)
 
 # Cleanup our locals

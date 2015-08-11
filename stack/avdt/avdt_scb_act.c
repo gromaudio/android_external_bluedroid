@@ -245,6 +245,7 @@ void avdt_scb_hdl_pkt_no_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
     UINT16  ex_len;
     UINT8   pad_len = 0;
 
+    AVDT_TRACE_DEBUG0("Enter avdt_scb_hdl_pkt_no_frag");
     p = p_start = (UINT8 *)(p_data->p_pkt + 1) + p_data->p_pkt->offset;
 
     /* parse media packet header */
@@ -289,6 +290,7 @@ void avdt_scb_hdl_pkt_no_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
 
         if (p_scb->cs.p_data_cback != NULL)
         {
+			AVDT_TRACE_DEBUG0("p_scb->cs.p_data_cback != NULL");
             /* report sequence number */
             p_data->p_pkt->layer_specific = seq;
             APPL_TRACE_LATENCY_AUDIO1("AVDTP Recv Packet, seq number %d", seq);
@@ -422,6 +424,7 @@ void avdt_scb_hdl_pkt_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
     UINT32  payload_len; /* payload length */
     UINT16  frag_len; /* fragment length */
 
+    AVDT_TRACE_DEBUG0("Enter avdt_scb_hdl_pkt_frag");
     p = (UINT8 *)(p_data->p_pkt + 1) + p_data->p_pkt->offset;
     p_end = p + p_data->p_pkt->len;
     /* parse all fragments */
@@ -608,6 +611,7 @@ void avdt_scb_hdl_pkt_frag(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
             /* send total media packet up */
             if (p_scb->cs.p_media_cback != NULL)
             {
+				AVDT_TRACE_DEBUG0("p_scb->cs.p_media_cback != NULL");
                 (*p_scb->cs.p_media_cback)(avdt_scb_to_hdl(p_scb), p_payload,
                                            payload_len, time_stamp, seq, m_pt, marker);
             }

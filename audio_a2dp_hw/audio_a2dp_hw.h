@@ -2,6 +2,7 @@
  *
  *  Copyright (C) 2009-2012 Broadcom Corporation
  *  Copyright (c) 2013, Linux Foundation. All rights reserved.
+ *  Copyright (C) 2014 Tieto Corporation
  *
  *  Licensed under the Apache License, Version 2.0 (the "License");
  *  you may not use this file except in compliance with the License.
@@ -50,6 +51,10 @@
 #define AUDIO_STREAM_DEFAULT_CHANNEL_FLAG  AUDIO_CHANNEL_OUT_STEREO
 #define AUDIO_STREAM_OUTPUT_BUFFER_SZ      (8*512)
 #define AUDIO_SKT_DISCONNECTED             (-1)
+#ifdef A2DP_SINK
+#define AUDIO_STREAM_DEFAULT_INPUT_CHANNEL_FLAG  AUDIO_CHANNEL_IN_STEREO
+#define AUDIO_STREAM_INPUT_BUFFER_SZ             (20*512)
+#endif
 
 typedef enum {
     A2DP_CTRL_CMD_NONE,
