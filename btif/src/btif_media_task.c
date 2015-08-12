@@ -1006,8 +1006,8 @@ tBTIF_STATUS btif_a2dp_setup_codec(void)
         status = BTIF_ERROR_SRV_AV_FEEDING_NOT_SUPPORTED;
     }
     GKI_enable();
-    return status;
 #endif
+    return status;
 }
 
 
