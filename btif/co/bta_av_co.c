@@ -314,16 +314,7 @@ BOOLEAN bta_av_co_audio_init(UINT8 *p_codec_type, UINT8 *p_codec_info, UINT8 *p_
 
         /* Codec is valid */
         return TRUE;
-#ifdef BTA_AVK_INCLUDED
-    case BTIF_SV_AV_AA_SBC_SINK_INDEX:
-        *p_codec_type = BTA_AV_CODEC_SBC;
 
-        /* This should not fail because we are using constants for parameters */
-        A2D_BldSbcInfo(AVDT_MEDIA_AUDIO, (tA2D_SBC_CIE *) &bta_av_co_sbc_sink_caps, p_codec_info);
-
-        /* Codec is valid */
-        return TRUE;
-#endif
     default:
         /* Not valid */
         return FALSE;
