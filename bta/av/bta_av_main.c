@@ -643,6 +643,7 @@ static void bta_av_api_register(tBTA_AV_DATA *p_data)
             if(!bta_av_cb.reg_audio)
             {
                 /* create the SDP records on the 1st audio channel */
+                bta_av_cb.sdp_a2d_handle = SDP_CreateRecord();
 #ifdef A2DP_SINK
                 A2D_AddRecord(UUID_SERVCLASS_AUDIO_SINK, p_service_name, NULL,
                                   A2D_SUPF_SPEAKER, bta_av_cb.sdp_a2d_handle);
