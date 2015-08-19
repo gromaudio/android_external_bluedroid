@@ -1328,8 +1328,6 @@ static int adev_open_output_stream(struct audio_hw_device *dev,
     int ret = 0;
     int i;
 
-    INFO("opening output");
-
     out = (struct a2dp_stream_out *)calloc(1, sizeof(struct a2dp_stream_out));
 
     if (!out)
@@ -1583,9 +1581,11 @@ static int adev_open_input_stream(struct audio_hw_device *dev,
             usleep(250000);
             skt_disconnect(in->ctrl_fd);
         }
-
-        /* ctrl channel not ready, wait a bit */
-        usleep(250000);
+        else
+        {
+          ERROR("error : cannot open ctrl channel. wait 250 ms");
+          usleep(250000);
+        }
     }
 
     if (in->ctrl_fd == AUDIO_SKT_DISCONNECTED)

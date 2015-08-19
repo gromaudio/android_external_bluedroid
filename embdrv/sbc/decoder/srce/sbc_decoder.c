@@ -506,23 +506,26 @@ static inline void sbc_dec_copy_pcmbuffer(SBC_DEC_PARAMS * pDestPcmBuffer, struc
 void SBC_Decoder(SBC_DEC_PARAMS *pstrDecParams)
 {
     int i=0, ch=0, framelen=0, samples=0;
-    struct sbc_frame frame={0};
-    struct sbc_decoder_state dec_state={0};
+    static struct sbc_priv priv = {0};
 
     if ( !pstrDecParams)
         return ;
 
-    framelen = sbc_unpack_frame(pstrDecParams->pu8Packet, &frame, pstrDecParams->u16PacketLength);
+    framelen = sbc_unpack_frame(pstrDecParams->pu8Packet, &priv.frame, pstrDecParams->u16PacketLength);
     pstrDecParams->s16SbcFrameLength= framelen;
 
-    sbc_decoder_init(&dec_state, &frame);
+    if( !priv.init )
+    {
+        sbc_decoder_init(&priv.dec_state, &priv.frame);
+        priv.init = 1;
+    }
     //frame.codesize = sbc_get_codesize(&sbc);
-    frame.length = framelen;
+    priv.frame.length = framelen;
 
     if (framelen <= 0)
           return ;
-    samples = sbc_synthesize_audio(&dec_state, &frame);
-    sbc_dec_copy_pcmbuffer(pstrDecParams, &frame, samples);
+    samples = sbc_synthesize_audio(&priv.dec_state, &priv.frame);
+    sbc_dec_copy_pcmbuffer(pstrDecParams, &priv.frame, samples);
 }
 
 void SBC_Decoder_Init(SBC_DEC_PARAMS *pstrDecParams)
