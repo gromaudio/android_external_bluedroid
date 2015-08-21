@@ -569,11 +569,11 @@ static void btif_recv_ctrl_data(void)
             /* Dont sent START request to stack while we are in call.
                Some headsets like Sony MW600, dont allow AVDTP START
                in call and respond BAD_STATE */
-            if (!btif_hf_is_call_idle())
-            {
-                a2dp_cmd_acknowledge(A2DP_CTRL_ACK_INCALL_FAILURE);
-                break;
-            }
+//            if (!btif_hf_is_call_idle())
+//            {
+//                a2dp_cmd_acknowledge(A2DP_CTRL_ACK_INCALL_FAILURE);
+//                break;
+//            }
 
             if (btif_av_stream_ready() == TRUE)
             {
@@ -588,7 +588,6 @@ static void btif_recv_ctrl_data(void)
                 /* already started, setup audio data channel listener
                    and ack back immediately */
                 UIPC_Open(UIPC_CH_ID_AV_AUDIO, btif_a2dp_data_cb);
-
                 a2dp_cmd_acknowledge(A2DP_CTRL_ACK_SUCCESS);
             }
             else
