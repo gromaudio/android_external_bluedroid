@@ -41,7 +41,7 @@
 #include <sys/prctl.h>
 
 #ifndef BTHC_DBG
-#define BTHC_DBG FALSE
+#define BTHC_DBG TRUE
 #endif
 
 #if (BTHC_DBG == TRUE)
@@ -221,23 +221,22 @@ static int init(const bt_hc_callbacks_t* p_cb, unsigned char *local_bdaddr)
     bt_hc_cbacks = (bt_hc_callbacks_t *) p_cb;
 
     init_vnd_if(local_bdaddr);
-
     utils_init();
 
-   if(is_bt_transport_smd())
-   {
-       extern tHCI_IF hci_mct_func_table;
-       extern tUSERIAL_IF userial_mct_func_table;
-       p_hci_if = &hci_mct_func_table;
-       p_userial_if = &userial_mct_func_table;
-   }
-   else
-   {
-       extern tHCI_IF hci_h4_func_table;
-       extern tUSERIAL_IF userial_h4_func_table;
-       p_hci_if = &hci_h4_func_table;
-       p_userial_if = &userial_h4_func_table;
-   }
+    if(is_bt_transport_smd())
+    {
+        extern tHCI_IF hci_mct_func_table;
+        extern tUSERIAL_IF userial_mct_func_table;
+        p_hci_if = &hci_mct_func_table;
+        p_userial_if = &userial_mct_func_table;
+    }
+    else
+    {
+        extern tHCI_IF hci_h4_func_table;
+        extern tUSERIAL_IF userial_h4_func_table;
+        p_hci_if = &hci_h4_func_table;
+        p_userial_if = &userial_h4_func_table;
+    }
 
     p_hci_if->init();
 
@@ -422,20 +421,24 @@ static void cleanup( void )
             hc_cb.epilog_timer_created = 0;
         }
     }
-
+BTHCDBG("1");
     lib_running = 0;
 
     lpm_cleanup();
+BTHCDBG("2");
     p_userial_if->close();
+BTHCDBG("3");
     p_hci_if->cleanup();
+BTHCDBG("4");
     utils_cleanup();
-
+BTHCDBG("5");
     /* Calling vendor-specific part */
     if (bt_vnd_if)
         bt_vnd_if->cleanup();
 
     fwcfg_acked = FALSE;
     bt_hc_cbacks = NULL;
+BTHCDBG("6");
 }
 
 
