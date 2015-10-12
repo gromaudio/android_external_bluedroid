@@ -414,7 +414,8 @@ UINT8 GKI_create_task (TASKPTR task_entry, UINT8 task_id, INT8 *taskname, UINT16
     /* Initialize mutex and condition variable objects for events and timeouts */
     pthread_condattr_t cond_attr;
     pthread_condattr_init(&cond_attr);
-    pthread_condattr_setclock(&cond_attr, CLOCK_MONOTONIC);
+    // TODO: FIXME on cm-11.0
+    /*pthread_condattr_setclock(&cond_attr, CLOCK_MONOTONIC);*/
 
     pthread_mutex_init(&gki_cb.os.thread_evt_mutex[task_id], NULL);
     pthread_cond_init (&gki_cb.os.thread_evt_cond[task_id], &cond_attr);
