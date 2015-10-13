@@ -1858,7 +1858,8 @@ void bta_av_rc_disc_done(tBTA_AV_DATA *p_data)
 
     APPL_TRACE_DEBUG("rc_handle %d", rc_handle);
     /* check peer version and whether support CT and TG role */
-    peer_features = bta_av_check_peer_features (UUID_SERVCLASS_AV_REMOTE_CONTROL);
+    // TODO: DSFIX: find out why UUID_SERVCLASS_AV_REMOTE_CONTROL doesn't work
+    peer_features = bta_av_check_peer_features (UUID_SERVCLASS_AV_REM_CTRL_TARGET);
     if ((p_cb->features & BTA_AV_FEAT_ADV_CTRL) && ((peer_features&BTA_AV_FEAT_ADV_CTRL) == 0))
     {
         /* if we support advance control and peer does not, check their support on TG role
@@ -2088,7 +2089,8 @@ void bta_av_rc_disc(UINT8 disc)
             db_params.p_attrs = attr_list;
 
             /* searching for UUID_SERVCLASS_AV_REMOTE_CONTROL gets both TG and CT */
-            if (AVRC_FindService(UUID_SERVCLASS_AV_REMOTE_CONTROL, p_addr, &db_params,
+            // TODO: DSFIX: find out why UUID_SERVCLASS_AV_REMOTE_CONTROL doesn't work
+            if (AVRC_FindService(UUID_SERVCLASS_AV_REM_CTRL_TARGET, p_addr, &db_params,
                             bta_av_avrc_sdp_cback) == AVRC_SUCCESS)
             {
                 p_cb->disc = disc;
