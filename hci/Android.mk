@@ -34,6 +34,17 @@ LOCAL_SRC_FILES += \
 	src/userial.c
 endif
 
+ifeq ($(BLUETOOTH_HCI_USE_USB),true)
+LOCAL_SRC_FILES += \
+        src/usb.c
+
+LOCAL_C_INCLUDES += \
+        external/libusb
+
+LOCAL_SHARED_LIBRARIES := \
+        libusb
+endif
+
 LOCAL_CFLAGS += -std=c99
 
 LOCAL_C_INCLUDES += \
