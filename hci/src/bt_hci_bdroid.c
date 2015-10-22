@@ -147,7 +147,9 @@ static void event_tx(UNUSED_ATTR void *context) {
         p_next_msg = utils_getnext(p_next_msg);
         continue;
       }
+#ifndef HCI_H2
       sending_hci_cmd_pkts_count++;
+#endif
     }
 
     HC_BT_HDR *p_msg = p_next_msg;
