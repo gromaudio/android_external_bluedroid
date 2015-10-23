@@ -42,7 +42,7 @@
 #include "vendor.h"
 
 #ifndef BTHC_DBG
-#define BTHC_DBG FALSE
+#define BTHC_DBG TRUE
 #endif
 
 #if (BTHC_DBG == TRUE)
@@ -502,10 +502,15 @@ static void cleanup(void)
     }
     BTHCDBG("%s Finalizing cleanup\n", __func__);
 
+    BTHCDBG("1");
     lpm_cleanup();
+    BTHCDBG("2");
     userial_close();
+    BTHCDBG("3");
     p_hci_if->cleanup();
+    BTHCDBG("4");
     utils_cleanup();
+    BTHCDBG("5");
 
     set_power(BT_VND_PWR_OFF);
     vendor_close();
@@ -515,6 +520,7 @@ static void cleanup(void)
     fwcfg_acked = false;
     bt_hc_cbacks = NULL;
     has_cleaned_up = true;
+    BTHCDBG("6");
 }
 
 static const bt_hc_interface_t bluetoothHCLibInterface = {

@@ -352,7 +352,6 @@ static libusb_device_handle *libusb_open_bt_device()
     if (r < 0)
     {
         ALOGE("usb_detach_kernel_driver 0 error %d\n", r);
-        return NULL;
     }
 
     r = libusb_claim_interface(handle, 0);
@@ -616,6 +615,7 @@ static void *usb_read_thread(void *arg)
     int size, size_wh, r, i, iso_xfer;
     struct libusb_transfer *transfer;
     unsigned char *buf;
+    struct timeval timeout = { 1, 0 };
 
     USBDBG("Entering usb_read_thread()");
     prctl(PR_SET_NAME, (unsigned long)"usb_read", 0, 0, 0);
@@ -658,18 +658,36 @@ out:
     {
         rx_buf = CONTAINER_RX_HDR(data_rx_xfer->buffer);
         bt_hc_cbacks->dealloc((TRANSAC) rx_buf, (char *)(rx_buf+1));
+
+        if (!libusb_cancel_transfer(data_rx_xfer))
+        {
+            USBDBG("Wait untill data transfer is canceled");
+            libusb_handle_events_timeout(0, &timeout);
+        }
         libusb_free_transfer(data_rx_xfer);
     }
     if (event_rx_xfer != NULL)
     {
         rx_buf = CONTAINER_RX_HDR(event_rx_xfer->buffer);
         bt_hc_cbacks->dealloc((TRANSAC) rx_buf, (char *)(rx_buf+1));
+
+        if (!libusb_cancel_transfer(event_rx_xfer))
+        {
+            USBDBG("Wait untill event transfer is canceled");
+            libusb_handle_events_timeout(0, &timeout);
+        }
         libusb_free_transfer(event_rx_xfer);
     }
     if(iso_rx_xfer != NULL)
     {
         iso_buf = CONTAINER_ISO_HDR(iso_rx_xfer->buffer);
         bt_hc_cbacks->dealloc((TRANSAC) iso_buf, (char *)(iso_buf+1));
+
+        if (!libusb_cancel_transfer(iso_rx_xfer))
+        {
+            USBDBG("Wait untill iso transfer is canceled");
+            libusb_handle_events_timeout(0, &timeout);
+        }
         libusb_free_transfer(iso_rx_xfer);
     }
 
