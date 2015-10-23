@@ -51,6 +51,7 @@ LOCAL_SRC_FILES += \
 	src/userial.c
 
 endif
+endif
 
 LOCAL_CFLAGS += -std=c99
 
