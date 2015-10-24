@@ -340,7 +340,7 @@ static int add_maps_sdp(const char* p_service_name, int scn)
         p_bta_maps_cfg = &bta_maps_cfg_email;
         //APPL_TRACE_DEBUG1("add_maps_sdp for: %s", p_service_name);
     } else {
-        p_bta_maps_cfg = &bta_maps_cfg_sms;
+        p_bta_maps_cfg = &bta_maps_cfg_sms_mms;
     }
 
     APPL_TRACE_DEBUG("add_maps_sdd:scn %d, service name %s", scn, p_service_name);
