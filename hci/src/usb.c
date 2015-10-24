@@ -381,7 +381,7 @@ static void usb_rx_signal_event()
     pthread_cond_signal(&usb.cond);
     if (usb.send_rx_event == TRUE)
     {
-       bthc_signal_event(HC_EVENT_RX);
+       bthc_rx_ready();
        usb.send_rx_event = FALSE;
     }
     pthread_mutex_unlock(&usb.mutex);
@@ -484,7 +484,7 @@ static void recv_xfer_cb(struct libusb_transfer *transfer)
         {
             p_rx = CONTAINER_RX_HDR(transfer->buffer);
         }
-        bt_hc_cbacks->dealloc((TRANSAC)p_rx, (char *)(p_rx + 1));
+        bt_hc_cbacks->dealloc((TRANSAC)p_rx);
         transfer->buffer = NULL;
         USBERR("libusb_submit_transfer : %d : %d : failed", \
                transfer->endpoint, transfer->status);
@@ -570,13 +570,11 @@ void handle_usb_events ()
                     USBERR("libusb_submit_transfer : data_rx_xfer failed");
                     if (iso_xfer)
                     {
-                        bt_hc_cbacks->dealloc((TRANSAC) iso_buf, \
-                              (char *)(iso_buf + 1));
+                        bt_hc_cbacks->dealloc((TRANSAC) iso_buf);
                     }
                     else
                     {
-                        bt_hc_cbacks->dealloc((TRANSAC) rx_buf, \
-                              (char *)(rx_buf + 1));
+                        bt_hc_cbacks->dealloc((TRANSAC) rx_buf);
                     }
                     transfer->buffer = NULL;
                 }
@@ -657,7 +655,7 @@ out:
     if (data_rx_xfer != NULL)
     {
         rx_buf = CONTAINER_RX_HDR(data_rx_xfer->buffer);
-        bt_hc_cbacks->dealloc((TRANSAC) rx_buf, (char *)(rx_buf+1));
+        bt_hc_cbacks->dealloc((TRANSAC) rx_buf);
 
         if (!libusb_cancel_transfer(data_rx_xfer))
         {
@@ -669,7 +667,7 @@ out:
     if (event_rx_xfer != NULL)
     {
         rx_buf = CONTAINER_RX_HDR(event_rx_xfer->buffer);
-        bt_hc_cbacks->dealloc((TRANSAC) rx_buf, (char *)(rx_buf+1));
+        bt_hc_cbacks->dealloc((TRANSAC) rx_buf);
 
         if (!libusb_cancel_transfer(event_rx_xfer))
         {
@@ -681,7 +679,7 @@ out:
     if(iso_rx_xfer != NULL)
     {
         iso_buf = CONTAINER_ISO_HDR(iso_rx_xfer->buffer);
-        bt_hc_cbacks->dealloc((TRANSAC) iso_buf, (char *)(iso_buf+1));
+        bt_hc_cbacks->dealloc((TRANSAC) iso_buf);
 
         if (!libusb_cancel_transfer(iso_rx_xfer))
         {
@@ -1009,7 +1007,7 @@ uint16_t  usb_read(uint16_t msg_id, uint8_t *p_buffer, uint16_t len)
 
             if (rem_len == 0)
             {
-               bt_hc_cbacks->dealloc((TRANSAC) p_rx_hdr, (char *)(p_rx_hdr+1));
+               bt_hc_cbacks->dealloc((TRANSAC) p_rx_hdr);
                p_rx_hdr = NULL;
             }
             usb.rx_pkt_len -= copy_len;
@@ -1172,15 +1170,15 @@ void usb_close(void)
     {
         while ((p_buf = utils_dequeue (&(usb.rx_eventq))) != NULL)
         {
-            bt_hc_cbacks->dealloc(p_buf, (char *) ((RX_HDR *)p_buf+1));
+            bt_hc_cbacks->dealloc(p_buf);
         }
         while ((p_buf = utils_dequeue (&(usb.rx_isoq))) != NULL)
         {
-            bt_hc_cbacks->dealloc(p_buf, (char *) ((RX_HDR *)p_buf+1));
+            bt_hc_cbacks->dealloc(p_buf);
         }
         while ((p_buf = utils_dequeue (&(usb.rx_bulkq))) != NULL)
         {
-            bt_hc_cbacks->dealloc(p_buf, (char *) ((RX_HDR *)p_buf+1));
+            bt_hc_cbacks->dealloc(p_buf);
         }
     }
 }
