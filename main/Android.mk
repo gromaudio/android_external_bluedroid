@@ -155,6 +155,7 @@ LOCAL_REQUIRED_MODULES := \
 	auto_pair_devlist.conf \
 	bt_did.conf \
 	bt_stack.conf \
+	ble_stack.conf \
 	libbt-vendor
 LOCAL_MULTILIB := 32
 
